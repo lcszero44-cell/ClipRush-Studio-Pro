@@ -1,0 +1,74 @@
+[
+  {
+    "name": "Resident Evil 4_20261015131050",
+    "original_filename": "Resident Evil 4_20261015131050.mp4",
+    "video_path": "D:\\ClipRush_Pro_V2\\data\\uploads\\Resident Evil 4_20261015131050_91099b.mp4",
+    "media_url": "/media/uploads/Resident Evil 4_20261015131050_91099b.mp4",
+    "profile_id": "resident_evil",
+    "meta": {
+      "duration": 1379.08,
+      "duration_str": "22:59",
+      "width": 1280,
+      "height": 720,
+      "fps": 29.97,
+      "has_audio": true,
+      "size_mb": 1014.04,
+      "codec": "h264"
+    },
+    "moments": [],
+    "long_edit": null,
+    "youtube_kit": null,
+    "status": "imported",
+    "id": "proj_9b9a128f7c",
+    "created_at": "2026-11-21T19:49:45.809313+00:00",
+    "updated_at": "2026-11-21T19:49:45.809313+00:00"
+  },
+  {
+    "name": "Resident Evil 4_20261015131050",
+    "original_filename": "Resident Evil 4_20261015131050.mp4",
+    "video_path": "D:\\ClipRush_Pro_V2\\data\\uploads\\Resident Evil 4_20261015131050_20c6f6.mp4",
+    "media_url": "/media/uploads/Resident Evil 4_20261015131050_20c6f6.mp4",
+    "profile_id": "resident_evil",
+    "meta": {
+      "duration": 1379.08,
+      "duration_str": "22:59",
+      "width": 1280,
+      "height": 720,
+      "fps": 29.97,
+      "has_audio": true,
+      "size_mb": 1014.04,
+      "codec": "h264"
+    },
+    "moments": [],
+    "long_edit": null,
+    "youtube_kit": null,
+    "status": "imported",
+    "id": "proj_70985c78d3",
+    "created_at": "2026-11-21T19:49:22.653519+00:00",
+    "updated_at": "2026-11-21T19:49:22.653519+00:00"
+  },
+  {
+    "name": "Resident Evil 4_20261015131050",
+    "original_filename": "Resident Evil 4_20261015131050.mp4",
+    "video_path": "D:\\ClipRush_Pro_V2\\data\\uploads\\Resident Evil 4_20261015131050_9a9863.mp4",
+    "media_url": "/media/uploads/Resident Evil 4_20261015131050_9a9863.mp4",
+    "profile_id": "resident_evil",
+    "meta": {
+      "duration": 1379.08,
+      "duration_str": "22:59",
+      "width": 1280,
+      "height": 720,
+      "fps": 29.97,
+      "has_audio": true,
+      "size_mb": 1014.04,
+      "codec": "h264"
+    },
+    "moments": [],
+    "long_edit": null,
+    "youtube_kit": null,
+    "status": "imported",
+    "id": "proj_e4a6972aa4",
+    "created_at": "2026-11-21T19:48:27.346255+00:00",
+    "updated_at": "2026-11-21T19:48:27.346255+00:00"
+  }
+]

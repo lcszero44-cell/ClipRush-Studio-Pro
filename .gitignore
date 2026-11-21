@@ -1,0 +1,104 @@
+# ClipRush Studio Pro - .gitignore
+# Garante que nenhum dado sensível ou arquivo pesado seja enviado ao GitHub
+
+# ===============================
+# Credenciais e Tokens Privados
+# ===============================
+data/client_secrets.json
+data/youtube_token.json
+*.env
+*.env.local
+*.env.*.local
+*secret*.json
+*token*.json
+*credentials*.json
+google-credentials.json
+youtube-oauth2.json
+
+# ===============================
+# Ambiente Virtual e Cache Python
+# ===============================
+.venv/
+venv/
+env/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache/
+.coverage
+.mypy_cache/
+.ruff_cache/
+.pyre/
+
+# ===============================
+# Arquivos de Mídia, Renders e Temporários
+# ===============================
+saida/
+data/uploads/
+data/temp/
+data/thumbs/
+*.mp4
+*.mkv
+*.mov
+*.webm
+*.avi
+*.ts
+*.m4v
+*.wav
+*.mp3
+*.flac
+*.aac
+*.ogg
+
+# ===============================
+# Binários Pesados Locais
+# ===============================
+ffmpeg*/
+ffprobe*
+*.exe
+*.dll
+*.so
+*.dylib
+
+# ===============================
+# IDE e Editores
+# ===============================
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+# ===============================
+# Logs e Arquivos de Debug
+# ===============================
+*.log
+debug.log
+error.log
+*.pid
+
+# ===============================
+# Build e Distribuição
+# ===============================
+build/
+dist/
+*.egg-info/
+pip-wheel-metadata/
+
+# ===============================
+# Arquivos de Configuração Local (Opcionais)
+# ===============================
+# Descomente se não quiser versionar configurações locais:
+# data/settings.json
+# data/projects.json
+# data/clips_library.json
+# data/youtube_autopilot.json
+
+# ===============================
+# OS Specific
+# ===============================
+Desktop.ini
+ehthumbs.db

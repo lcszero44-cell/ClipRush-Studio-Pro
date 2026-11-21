@@ -1,0 +1,1023 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>ClipRush Studio Pro</title>
+  <link rel="icon" type="image/png" href="/assets/cliprush.png" />
+  <link rel="stylesheet" href="/static/css/styles.css" />
+</head>
+<body>
+  <div class="app-shell">
+    <!-- Compact Header (56px) -->
+    <header class="app-header">
+      <div class="brand-group">
+        <img src="/assets/cliprush.png" alt="ClipRush Studio Pro" class="brand-logo" width="32" height="32" />
+        <span class="brand-title">ClipRush Studio Pro</span>
+        <span class="brand-badge">PRO</span>
+      </div>
+
+      <!-- Center Clickable Stepper -->
+      <nav class="header-stepper" aria-label="Etapas do Projeto">
+        <button id="step-btn-1" class="step-btn active" data-step="1"
+          data-tooltip="Importe sua gameplay de PS4/PS5 e selecione o perfil calibrado do jogo.">
+          <span class="step-num">1</span>
+          <span>1. Importar &amp; Jogo</span>
+        </button>
+        <span class="step-sep"></span>
+        <button id="step-btn-2" class="step-btn" data-step="2"
+          data-tooltip="Escolha cortes virais 9:16 ou gameplay longa 16:9, enquadramento, zoom e legendas.">
+          <span class="step-num">2</span>
+          <span>2. Estilo &amp; Efeitos</span>
+        </button>
+        <span class="step-sep"></span>
+        <button id="step-btn-3" class="step-btn" data-step="3"
+          data-tooltip="Visualize o ranking completo de momentos epicos, exporte em lote e copie o kit viral.">
+          <span class="step-num">3</span>
+          <span>3. Ranking &amp; Exportar</span>
+        </button>
+      </nav>
+
+      <!-- Status Chips & Output Folder -->
+      <div class="header-right">
+        <button id="chip-system" class="status-chip ok"
+          data-tooltip="Servidor local FastAPI ativo em 127.0.0.1:8765. Clique para atualizar status.">
+          <span class="status-dot"></span>
+          <span>Sistema OK</span>
+        </button>
+        <button id="chip-ollama" class="status-chip warn"
+          data-tooltip="Status da IA Qwen 3.5 9B (Ollama). Clique para iniciar ou reconectar o Ollama.">
+          <span class="status-dot"></span>
+          <span id="chip-ollama-label">Qwen 3.5 ...</span>
+        </button>
+        <button id="chip-ffmpeg" class="status-chip ok"
+          data-tooltip="Motor FFmpeg de corte, zoom de impacto e renderizacao de video.">
+          <span class="status-dot"></span>
+          <span id="chip-ffmpeg-label">FFmpeg OK</span>
+        </button>
+        <button id="btn-open-output" class="btn btn-sm btn-cyan"
+          data-tooltip="Abre no Windows Explorer a pasta onde todos os videos renderizados sao salvos.">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
+          <span>Abrir Pasta Saida</span>
+        </button>
+      </div>
+    </header>
+
+    <div class="app-body">
+      <!-- Clean Sidebar -->
+      <aside class="app-sidebar">
+        <nav class="sidebar-nav" aria-label="Navegacao Principal">
+          <button class="nav-item active" data-view="novo-projeto"
+            data-tooltip="Inicie um novo projeto de cortes virais 9:16 ou gameplay longa 16:9.">
+            <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
+            <span>Novo Projeto</span>
+          </button>
+
+          <button class="nav-item" data-view="biblioteca"
+            data-tooltip="Assista aos clipes MP4 prontos, copie textos virais e publique em 1 clique.">
+            <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
+            <span>Biblioteca de Clipes</span>
+            <span id="nav-clips-count" class="nav-count">0</span>
+          </button>
+
+          <button class="nav-item" data-view="agendador"
+            data-tooltip="Organize a fila de postagens para YouTube Shorts, TikTok e Instagram Reels.">
+            <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+            <span>Agendador &amp; Publicacao</span>
+            <span id="nav-sched-count" class="nav-count">0</span>
+          </button>
+
+          <button class="nav-item" data-view="limpeza"
+            data-tooltip="Verifique espaco ocupado por arquivos temporarios e libere disco com seguranca.">
+            <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/></svg>
+            <span>Limpeza de Disco</span>
+          </button>
+
+          <button class="nav-item" data-view="configuracoes"
+            data-tooltip="Configure Ollama Qwen 3.5, FFmpeg, pasta de saida, Whisper e aceleracao GPU.">
+            <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9c.26.604.852.997 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+            <span>Configuracoes</span>
+          </button>
+        </nav>
+
+        <div class="sidebar-footer">
+          <div class="sidebar-footer-title">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#22D3EE" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg>
+            <span>Motor Multimodal PS4</span>
+          </div>
+          <div>Audio RMS + Optical Flow + Qwen 3.5 9B Vision (sem precisar de microfone).</div>
+        </div>
+      </aside>
+
+      <!-- Main Workspace -->
+      <main class="app-main">
+        <!-- ================= VIEW 1: NOVO PROJETO (3-STEP STUDIO) ================= -->
+        <section id="view-novo-projeto" class="view-section active">
+
+          <!-- STEP 1: IMPORTAR & JOGO -->
+          <div id="step-panel-1">
+            <div class="section-head">
+              <div>
+                <h1 class="section-title">1. Importar Gameplay &amp; Perfil do Jogo</h1>
+                <p class="section-sub">Arraste sua gravacao de PS4/PS5 ou informe o caminho local sem duplicar arquivos gigantes.</p>
+              </div>
+              <div class="flex flex-wrap gap-2">
+                <button id="btn-auto-mode-step1" class="btn btn-auto-magic"
+                  data-tooltip="Executa tudo sozinho em 1 clique: Analise Multimodal -> Visao Qwen 3.5 -> Renderiza Top 5 -> Gera Kit Viral -> Abre Biblioteca pronta.">
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
+                  <span>Modo Automatico (Analisar + Gerar Top 5 Agora)</span>
+                </button>
+                <button id="btn-step1-next" class="btn btn-primary" disabled
+                  data-tooltip="Avanca para configurar o modo 9:16 ou 16:9, estilos visuais, zoom e legendas.">
+                  <span>Avancar para Estilo &amp; Efeitos</span>
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><polyline points="9 18 15 12 9 6"/></svg>
+                </button>
+              </div>
+            </div>
+
+            <!-- Live Auto-Pipeline Progress (Step 1) -->
+            <div id="auto-progress-box-step1" class="progress-box hidden">
+              <div class="flex items-center justify-between">
+                <strong id="auto-progress-msg-step1" style="color:#fff;">Modo Automatico iniciando...</strong>
+                <span id="auto-progress-pct-step1" class="badge badge-cyan">0%</span>
+              </div>
+              <div class="progress-track"><div id="auto-progress-fill-step1" class="progress-fill"></div></div>
+            </div>
+
+            <!-- Upload & Local Path Card -->
+            <div class="card mb-4">
+              <div id="dropzone" class="dropzone"
+                data-tooltip="Clique ou arraste um video MP4/MKV/MOV da sua gameplay de PS4/PS5 para importar.">
+                <input id="file-input" type="file" accept=".mp4,.mkv,.mov,.avi,.webm,.m4v" class="hidden" />
+                <div class="dropzone-icon">
+                  <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+                </div>
+                <div style="font-size:15px;font-weight:700;color:#fff;">Arraste sua gameplay aqui ou clique para escolher o arquivo</div>
+                <div class="text-muted mt-2">Suporta MP4, MKV, MOV, WEBM • Deteccao automatica de combates, sustos, mortes cinematograficas e filtro anti-tedio PS4</div>
+              </div>
+
+              <div class="local-import-row">
+                <input id="local-path-input" class="input" type="text"
+                  placeholder="Ou cole o caminho local direto (ex: D:\Gravacoes\ResidentEvil4_PS4.mp4) — importacao instantanea"
+                  data-tooltip="Informe o caminho direto no disco para evitar copiar videos grandes de PS4." />
+                <button id="btn-import-local" class="btn btn-cyan"
+                  data-tooltip="Importa o video diretamente do disco local sem copiar o arquivo.">
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+                  <span>Importar Caminho Local</span>
+                </button>
+              </div>
+
+              <!-- Active Project Summary Pill -->
+              <div id="active-video-banner" class="hidden mt-4" style="padding:12px 14px;border-radius:11px;background:rgba(16,185,129,0.1);border:1px solid rgba(16,185,129,0.35);display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;">
+                <div class="flex items-center gap-3">
+                  <span class="badge badge-green">VIDEO CARREGADO</span>
+                  <strong id="active-video-name" style="color:#fff;"></strong>
+                  <span id="active-video-meta" class="text-muted"></span>
+                </div>
+                <div class="flex flex-wrap gap-2">
+                  <button id="btn-auto-quick-step1" class="btn btn-sm btn-auto-magic"
+                    data-tooltip="Analisa a gameplay, renderiza os 5 melhores clipes 9:16 com Kit Viral e abre direto a Biblioteca.">
+                    <span>Modo Automatico Top 5</span>
+                  </button>
+                  <button id="btn-quick-analyze-step1" class="btn btn-sm btn-primary"
+                    data-tooltip="Inicia imediatamente a analise multimodal da gameplay para revisar o ranking antes de exportar.">
+                    <span>Apenas Analisar</span>
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            <!-- Calibrated PS4 Game Profiles -->
+            <div class="flex items-center justify-between mb-2">
+              <div>
+                <h2 style="margin:0;font-size:15px;font-weight:700;color:#fff;">Perfis Calibrados por Estilo de Jogo (PS4 / PS5)</h2>
+                <p class="text-xs" style="margin:3px 0 0;">O perfil ajusta pesos de audio, optical flow, sustos, raio-X e contexto completo de mortes cinematograficas.</p>
+              </div>
+              <span id="auto-profile-badge" class="badge badge-purple">Selecao Rapida / Auto</span>
+            </div>
+            <div id="profiles-grid" class="grid-3 mb-4"></div>
+
+            <!-- Recent Projects -->
+            <div id="recent-projects-wrap" class="card hidden">
+              <div class="flex items-center justify-between mb-3">
+                <strong style="color:#fff;font-size:14px;">Projetos Recentes</strong>
+                <span class="text-xs">Clique para retomar instantaneamente</span>
+              </div>
+              <div id="recent-projects-list" class="flex flex-wrap gap-2"></div>
+            </div>
+          </div>
+
+          <!-- STEP 2: ESTILO & EFEITOS -->
+          <div id="step-panel-2" class="hidden">
+            <div class="section-head">
+              <div>
+                <h1 class="section-title">2. Modo de Producao, Estilo &amp; Efeitos Virais</h1>
+                <p class="section-sub">Configure o enquadramento 9:16, gancho magnetico, zoom de impacto ou modo Gameplay Longa 16:9.</p>
+              </div>
+              <div class="flex flex-wrap gap-2">
+                <button id="btn-step2-back" class="btn"
+                  data-tooltip="Volta para a etapa de importacao de video e selecao de jogo.">
+                  <span>Voltar</span>
+                </button>
+                <button id="btn-auto-mode-step2" class="btn btn-auto-magic btn-lg"
+                  data-tooltip="Executa toda a cadeia sem paradas: Analise Multimodal -> Visao Qwen 3.5 -> Renderiza Top 5 -> Kit Viral -> Abre Biblioteca pronta.">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
+                  <span>Modo Automatico (Analisar + Gerar Top 5 Agora)</span>
+                </button>
+                <button id="btn-start-analysis" class="btn btn-primary btn-lg"
+                  data-tooltip="Executa fusao multimodal (FFmpeg Audio + OpenCV Optical Flow + Qwen 3.5 Vision) para rankear todos os momentos epicos antes de escolher.">
+                  <span>Analisar e Revisar Ranking</span>
+                </button>
+              </div>
+            </div>
+
+            <!-- Live Analysis Progress -->
+            <div id="analysis-progress-box" class="progress-box hidden">
+              <div class="flex items-center justify-between">
+                <strong id="analysis-progress-msg" style="color:#fff;">Iniciando analise multimodal...</strong>
+                <span id="analysis-progress-pct" class="badge badge-cyan">0%</span>
+              </div>
+              <div class="progress-track"><div id="analysis-progress-fill" class="progress-fill"></div></div>
+            </div>
+
+            <!-- Two Production Modes -->
+            <div class="mode-tabs">
+              <button id="mode-btn-viral" class="mode-card selected" data-mode="viral_9_16"
+                data-tooltip="Cria cortes verticais 9:16 com gancho nos 2s iniciais, zoom de impacto e kit viral para TikTok, Shorts e Reels.">
+                <div class="mode-icon">
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="6" y="2" width="12" height="20" rx="2"/><line x1="12" y1="18" x2="12.01" y2="18"/></svg>
+                </div>
+                <div>
+                  <div style="font-weight:700;color:#fff;font-size:14px;">Modo 1: Cortes Virais (9:16)</div>
+                  <div class="text-muted mt-2">TikTok, YouTube Shorts e Instagram Reels. Gancho magnetico 2s, Punch-In/Out Zoom e lote continuo.</div>
+                </div>
+              </button>
+
+              <button id="mode-btn-long" class="mode-card" data-mode="long_16_9"
+                data-tooltip="Remove trechos parados/menus/loadings em 1920x1080 mantendo historia e lutas, gerando capitulos, SEO e thumbnail.">
+                <div class="mode-icon" style="background:rgba(34,211,238,0.16);color:#67E8F9;">
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="4" width="20" height="14" rx="2"/><polygon points="10 8 15 11 10 14 10 8"/></svg>
+                </div>
+                <div>
+                  <div style="font-weight:700;color:#fff;font-size:14px;">Modo 2: Gameplay Longa Editada (16:9)</div>
+                  <div class="text-muted mt-2">YouTube Episodios / Highlights 1080p. Corta partes mortas, gera Capitulos, 3 Titulos CTR, Descricao SEO e Thumbnail.</div>
+                </div>
+              </button>
+            </div>
+
+            <!-- Mode 1 Config Panel -->
+            <div id="mode1-config-panel">
+              <div class="card mb-4">
+                <h3 style="margin:0 0 12px;font-size:14.5px;color:#fff;">3 Estilos de Enquadramento 9:16 em 1 Clique</h3>
+                <div class="grid-3">
+                  <div class="style-card selected" data-style="viral_blur"
+                    data-tooltip="Mantem a tela 16:9 inteira sem cortar HUD ou legendas do jogo, com fundo desfocado animado.">
+                    <div class="phone-mock viral_blur">
+                      <div class="mock-hook-pill"></div>
+                      <div class="mock-frame"></div>
+                    </div>
+                    <div style="font-weight:700;color:#fff;text-align:center;">Viral Blur</div>
+                    <div class="text-xs" style="text-align:center;">16:9 centralizada sem cortar HUD/legendas originais + fundo blur animado.</div>
+                  </div>
+
+                  <div class="style-card" data-style="tela_cheia"
+                    data-tooltip="Preenche toda a tela vertical 9:16 com foco no centro da acao e zoom de impacto dinamico.">
+                    <div class="phone-mock tela_cheia">
+                      <div class="mock-hook-pill"></div>
+                      <div class="mock-frame"></div>
+                    </div>
+                    <div style="font-weight:700;color:#fff;text-align:center;">Tela Cheia Pro</div>
+                    <div class="text-xs" style="text-align:center;">Crop 9:16 preenchido com foco inteligente na acao + zoom de impacto.</div>
+                  </div>
+
+                  <div class="style-card" data-style="clipe_limpo"
+                    data-tooltip="Exporta sem textos sobrepostos, apenas corte cirurgico, zoom de impacto e realce de cor/contraste.">
+                    <div class="phone-mock clipe_limpo">
+                      <div class="mock-frame"></div>
+                    </div>
+                    <div style="font-weight:700;color:#fff;text-align:center;">Clipe Limpo</div>
+                    <div class="text-xs" style="text-align:center;">Zero textos sobrepostos — apenas corte cirurgico, zoom e correcao de cor.</div>
+                  </div>
+                </div>
+              </div>
+
+              <div class="grid-2">
+                <!-- Dynamic Retention Effects -->
+                <div class="card">
+                  <h3 style="margin:0 0 12px;font-size:14.5px;color:#fff;">Mecanicas Avancadas de Retencao &amp; Engajamento</h3>
+                  <div class="flex" style="flex-direction:column;gap:8px;">
+                    <div class="toggle-row"
+                      data-tooltip="Exibe gancho curto de curiosidade aberta (max 6 palavras) nos 2,5s iniciais com Auto-Fit e MarginV=140.">
+                      <div>
+                        <div style="font-weight:600;color:#fff;">Gancho de Curiosidade Aberta (2,5s no Topo)</div>
+                        <div class="text-xs">Max 6 palavras gerado pelo Qwen 3.5 com Auto-Fit e margens seguras (MarginV=140).</div>
+                      </div>
+                      <label class="switch">
+                        <input id="toggle-hook" type="checkbox" checked />
+                        <span class="slider"></span>
+                      </label>
+                    </div>
+
+                    <div class="toggle-row"
+                      data-tooltip="Insere um flash ultrarrapido de 0,3s do pico da acao no segundo 0 para prender a atencao imediatamente.">
+                      <div>
+                        <div style="font-weight:600;color:#fff;">Preview Flash do Pico (0,3s no Segundo 0)</div>
+                        <div class="text-xs">Micro-teaser de 0,3s do momento de maior impacto logo na abertura do Short.</div>
+                      </div>
+                      <label class="switch">
+                        <input id="toggle-preview-flash" type="checkbox" checked />
+                        <span class="slider"></span>
+                      </label>
+                    </div>
+
+                    <div class="toggle-row"
+                      data-tooltip="Corta o final exatamente no auge da acao ou morte sem segundos mortos, disparando replays automaticos.">
+                      <div>
+                        <div style="font-weight:600;color:#fff;">Loop Infinito (Corte Seco no Climax)</div>
+                        <div class="text-xs">Encerra no pico da acao/morte sem sobras mortas para maximizar replays.</div>
+                      </div>
+                      <label class="switch">
+                        <input id="toggle-infinite-loop" type="checkbox" checked />
+                        <span class="slider"></span>
+                      </label>
+                    </div>
+
+                    <div class="toggle-row"
+                      data-tooltip="Exibe um badge discreto nos 2s finais com pergunta curta gerada pelo Qwen sobre a cena para estimular comentarios.">
+                      <div>
+                        <div style="font-weight:600;color:#fff;">Gatilho Visual de Comentarios (CTA 2s Finais)</div>
+                        <div class="text-xs">Badge discreto no final com pergunta da cena (ex: &quot;Voce escaparia dessa?&quot;).</div>
+                      </div>
+                      <label class="switch">
+                        <input id="toggle-cta-comment" type="checkbox" checked />
+                        <span class="slider"></span>
+                      </label>
+                    </div>
+
+                    <div class="toggle-row"
+                      data-tooltip="Zoom rapido 1.00x -> 1.18x -> 1.00x (0.6s) + micro-shake + contraste sincronizado APENAS nos picos reais de impacto e morte.">
+                      <div>
+                        <div style="font-weight:600;color:#fff;">Zoom de Impacto Inteligente + Micro-Shake</div>
+                        <div class="text-xs">Punch-In/Out (1.00x → 1.18x → 1.00x em 0,6s) nos picos; zoom suave 1.06x em dialogos.</div>
+                      </div>
+                      <label class="switch">
+                        <input id="toggle-impact-zoom" type="checkbox" checked />
+                        <span class="slider"></span>
+                      </label>
+                    </div>
+
+                    <div class="toggle-row"
+                      data-tooltip="Sintetiza e sincroniza um efeito sonoro sutil (whoosh + sub-bass via FFmpeg) exatamente no instante do Zoom de Impacto.">
+                      <div>
+                        <div style="font-weight:600;color:#fff;">Efeitos Sonoros de Impacto (SFX Whoosh / Sub-Bass)</div>
+                        <div class="text-xs">Audio de impacto leve sintetizado via FFmpeg com ducking sutil nos picos.</div>
+                      </div>
+                      <label class="switch">
+                        <input id="toggle-impact-sfx" type="checkbox" checked />
+                        <span class="slider"></span>
+                      </label>
+                    </div>
+
+                    <div class="toggle-row"
+                      data-tooltip="Acelera suavemente em 1.25x intervalos internos parados maiores que 2,5s (ex: corrida ou recarga) mantendo ritmo frenetico.">
+                      <div>
+                        <div style="font-weight:600;color:#fff;">Jump-Cuts / Aceleracao Inteligente (1.25x)</div>
+                        <div class="text-xs">Acelera trechos internos sem acao (&gt;2,5s) para eliminar quedas de retencao.</div>
+                      </div>
+                      <label class="switch">
+                        <input id="toggle-smart-pacing" type="checkbox" checked />
+                        <span class="slider"></span>
+                      </label>
+                    </div>
+
+                    <div class="toggle-row"
+                      data-tooltip="Desenha uma barra fina neon de 3px (roxo/ciano) na Safe Zone mostrando o progresso visual ate o climax.">
+                      <div>
+                        <div style="font-weight:600;color:#fff;">Barra de Progresso Visual (3px Neon)</div>
+                        <div class="text-xs">Barra roxo/ciano de 3px na Safe Zone guiando o espectador ate o final.</div>
+                      </div>
+                      <label class="switch">
+                        <input id="toggle-progress-bar" type="checkbox" checked />
+                        <span class="slider"></span>
+                      </label>
+                    </div>
+
+                    <div class="toggle-row"
+                      data-tooltip="Aplica loudnorm (-14 LUFS) + limiter no FFmpeg para audio alto, cristalino e padronizado para alto-falantes de celular.">
+                      <div>
+                        <div style="font-weight:600;color:#fff;">Normalizacao Profissional de Audio (-14 LUFS + Limiter)</div>
+                        <div class="text-xs">Volume alto e nitido para celular sem estourar explosoes + ducking no SFX.</div>
+                      </div>
+                      <label class="switch">
+                        <input id="toggle-audio-norm" type="checkbox" checked />
+                        <span class="slider"></span>
+                      </label>
+                    </div>
+
+                    <div class="toggle-row"
+                      data-tooltip="No estilo Tela Cheia Pro, rastreia o centro de massa do Optical Flow a cada 1s para mover suavemente o crop 9:16 ate a acao.">
+                      <div>
+                        <div style="font-weight:600;color:#fff;">Smart Action Tracking (Tela Cheia Pro)</div>
+                        <div class="text-xs">Desloca suavemente o crop 9:16 em direcao a tiros, inimigos e explosoes via OpenCV.</div>
+                      </div>
+                      <label class="switch">
+                        <input id="toggle-action-tracking" type="checkbox" checked />
+                        <span class="slider"></span>
+                      </label>
+                    </div>
+                  </div>
+                </div>
+
+                <!-- Subtitles Control + Visual Style Selector -->
+                <div class="card">
+                  <h3 style="margin:0 0 12px;font-size:14.5px;color:#fff;">Legendas Auto-Fit &amp; Estilo Visual</h3>
+                  <div class="flex" style="flex-direction:column;gap:10px;">
+                    <label class="toggle-row card-interactive selected" id="sub-opt-off"
+                      data-tooltip="Ideal para jogos de PS4 que ja possuem legendas em portugues na tela, evitando sobreposicao.">
+                      <div>
+                        <div style="font-weight:600;color:#fff;">Desligado (Jogo ja tem legenda na tela)</div>
+                        <div class="text-xs">Padrao recomendado para jogos legendados em PT-BR.</div>
+                      </div>
+                      <input type="radio" name="subtitles_mode" value="off" checked />
+                    </label>
+
+                    <label class="toggle-row card-interactive" id="sub-opt-whisper"
+                      data-tooltip="Transcreve falas e cutscenes com Whisper Auto-Fit (MarginL/R=60, MarginV=260) e ativa zoom cinematografico suave 1.00x -> 1.06x.">
+                      <div>
+                        <div style="font-weight:600;color:#fff;">Legenda dos Personagens / Cutscenes (Whisper Auto-Fit)</div>
+                        <div class="text-xs">Safe Zone MarginV=260 sem cortar bordas + zoom cinematografico lento (1.06x) nos dialogos.</div>
+                      </div>
+                      <input type="radio" name="subtitles_mode" value="whisper" />
+                    </label>
+                  </div>
+
+                  <div class="mt-3">
+                    <div class="text-xs" style="font-weight:700;color:var(--text-secondary);">ESTILO VISUAL DO GANCHO &amp; LEGENDAS (AUTO-FIT)</div>
+                    <div class="sub-style-grid" id="subtitle-style-selector">
+                      <button type="button" class="sub-style-pill selected" data-sub-style="amarelo_viral"
+                        data-tooltip="Estilo viral classico com letras amarelas fortes, borda preta grossa e maxima leitura no celular.">
+                        <div class="sub-preview-sample sample-yellow">OLHA ISSO!</div>
+                        <div class="text-xs" style="color:#fff;font-weight:600;">Amarelo Viral com Borda Preta</div>
+                      </button>
+                      <button type="button" class="sub-style-pill" data-sub-style="branco_clean"
+                        data-tooltip="Visual minimalista branco limpo com sombra suave, ideal para gameplays cinematograficas.">
+                        <div class="sub-preview-sample sample-clean">OLHA ISSO!</div>
+                        <div class="text-xs" style="color:#fff;font-weight:600;">Branco Clean Moderno</div>
+                      </button>
+                      <button type="button" class="sub-style-pill" data-sub-style="destaque_keyword"
+                        data-tooltip="Destaca automaticamente as palavras-chave mais fortes da frase em amarelo vibrante.">
+                        <div class="sub-preview-sample sample-kw">ELE <span>EXPLODIU</span> TUDO</div>
+                        <div class="text-xs" style="color:#fff;font-weight:600;">Destaque Palavra-Chave</div>
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Mode 2 Info Panel -->
+            <div id="mode2-config-panel" class="card hidden">
+              <h3 style="margin:0 0 10px;font-size:15px;color:#fff;">Pipeline Automatico — Gameplay Longa 16:9 (1920x1080)</h3>
+              <div class="grid-3 mt-3">
+                <div class="toggle-row" data-tooltip="Remove automaticamente telas de loading, menus do PS4, pausas e caminhadas vazias longas.">
+                  <div>
+                    <div style="font-weight:700;color:#fff;">1. Corte Anti-Tedio Limpo</div>
+                    <div class="text-xs mt-2">Mantem 100% da historia, dialogos e lutas removendo trechos parados longos.</div>
+                  </div>
+                </div>
+                <div class="toggle-row" data-tooltip="Cria capitulos com timestamps prontos, 3 titulos clicaveis, descricao SEO e tags via Qwen 3.5.">
+                  <div>
+                    <div style="font-weight:700;color:#fff;">2. Pacote SEO + Capitulos</div>
+                    <div class="text-xs mt-2">Timestamps prontos para colar no YouTube, 3 Titulos CTR, Descricao e Tags.</div>
+                  </div>
+                </div>
+                <div class="toggle-row" data-tooltip="Seleciona automaticamente o frame mais nitido e epico da gameplay para sua Thumbnail 1080p.">
+                  <div>
+                    <div style="font-weight:700;color:#fff;">3. Melhor Frame Thumbnail</div>
+                    <div class="text-xs mt-2">Exporta imagem 1920x1080 pronta para capa do episodio no YouTube.</div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- STEP 3: RANKING & EXPORTAR -->
+          <div id="step-panel-3" class="hidden">
+            <div class="section-head">
+              <div>
+                <h1 class="section-title">3. Ranking Completo &amp; Exportacao em Lote</h1>
+                <p id="ranking-summary" class="section-sub">Analise sua gameplay para listar todos os momentos epicos encontrados.</p>
+              </div>
+              <div class="flex flex-wrap gap-2">
+                <button id="btn-step3-reconfig" class="btn btn-sm"
+                  data-tooltip="Volta para ajustar o estilo de enquadramento, zoom de impacto ou legendas.">
+                  <span>Ajustar Estilo</span>
+                </button>
+                <button id="btn-batch-5" class="btn btn-sm btn-primary" data-batch="5"
+                  data-tooltip="Renderiza continuamente os 5 melhores momentos do ranking sem pedir confirmacao entre videos.">
+                  <span>Gerar Top 5</span>
+                </button>
+                <button id="btn-batch-10" class="btn btn-sm btn-primary" data-batch="10"
+                  data-tooltip="Renderiza continuamente os 10 melhores momentos do ranking em lote automatico.">
+                  <span>Gerar Top 10</span>
+                </button>
+                <button id="btn-batch-20" class="btn btn-sm btn-primary" data-batch="20"
+                  data-tooltip="Renderiza continuamente os 20 melhores momentos do ranking em lote automatico.">
+                  <span>Gerar Top 20</span>
+                </button>
+                <button id="btn-batch-all" class="btn btn-sm btn-success" data-batch="all"
+                  data-tooltip="Renderiza TODOS os momentos epicos detectados no video sem pausar entre clipes.">
+                  <span>Gerar Todos</span>
+                </button>
+                <button id="btn-batch-selected" class="btn btn-sm btn-cyan"
+                  data-tooltip="Renderiza somente os clipes que voce marcou manualmente nos cards abaixo.">
+                  <span>Gerar Selecionados (<span id="selected-count">0</span>)</span>
+                </button>
+              </div>
+            </div>
+
+            <!-- Batch Render Progress -->
+            <div id="render-progress-box" class="progress-box hidden">
+              <div class="flex items-center justify-between">
+                <strong id="render-progress-msg" style="color:#fff;">Renderizando lote...</strong>
+                <span id="render-progress-pct" class="badge badge-green">0%</span>
+              </div>
+              <div class="progress-track"><div id="render-progress-fill" class="progress-fill"></div></div>
+            </div>
+
+            <!-- Mode 2 YouTube Long Export Panel -->
+            <div id="long-export-panel" class="card mb-4 hidden">
+              <div class="flex items-center justify-between flex-wrap gap-3 mb-3">
+                <div>
+                  <span class="badge badge-cyan">MODO 2 • YOUTUBE 16:9 (1920x1080)</span>
+                  <h3 style="margin:6px 0 0;color:#fff;font-size:16px;">Gameplay Longa Editada, Capitulos &amp; Thumbnail</h3>
+                  <div id="long-stats-text" class="text-muted mt-2"></div>
+                </div>
+                <button id="btn-export-long" class="btn btn-success btn-lg"
+                  data-tooltip="Exporta a gameplay editada 1920x1080 sem partes mortas e salva a Thumbnail 1080p na pasta de saida.">
+                  <span>Exportar Gameplay 16:9 (1080p)</span>
+                </button>
+              </div>
+
+              <div class="grid-2 mt-3">
+                <div>
+                  <label class="field-label">Melhor Frame Capturado (Thumbnail 1080p)</label>
+                  <img id="long-thumb-img" src="" alt="Thumbnail YouTube" style="width:100%;border-radius:11px;border:1px solid var(--border-subtle);background:#07090E;aspect-ratio:16/9;object-fit:cover;" />
+                  <div class="mt-3">
+                    <div class="flex items-center justify-between mb-2">
+                      <label class="field-label" style="margin:0;">Capitulos com Timestamps</label>
+                      <button id="btn-copy-chapters" class="btn btn-sm"
+                        data-tooltip="Copia todos os capitulos com timestamps prontos para colar na descricao do YouTube.">
+                        <span>Copiar Capitulos</span>
+                      </button>
+                    </div>
+                    <textarea id="long-chapters-box" class="textarea" readonly rows="5"></textarea>
+                  </div>
+                </div>
+
+                <div>
+                  <label class="field-label">3 Titulos de Alto CTR (gerados pelo Qwen 3.5)</label>
+                  <div id="long-titles-list" class="flex" style="flex-direction:column;gap:8px;"></div>
+
+                  <div class="mt-3">
+                    <div class="flex items-center justify-between mb-2">
+                      <label class="field-label" style="margin:0;">Descricao SEO Completa</label>
+                      <button id="btn-copy-seo" class="btn btn-sm"
+                        data-tooltip="Copia a descricao SEO completa com capitulos e hashtags para o YouTube.">
+                        <span>Copiar Descricao SEO</span>
+                      </button>
+                    </div>
+                    <textarea id="long-desc-box" class="textarea" rows="5"></textarea>
+                  </div>
+
+                  <div class="mt-3">
+                    <div class="flex items-center justify-between mb-2">
+                      <label class="field-label" style="margin:0;">Tags YouTube</label>
+                      <button id="btn-copy-tags" class="btn btn-sm"
+                        data-tooltip="Copia todas as tags separadas por virgula prontas para o YouTube Studio.">
+                        <span>Copiar Tags</span>
+                      </button>
+                    </div>
+                    <input id="long-tags-box" class="input" readonly />
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Category Filter Bar -->
+            <div class="flex items-center justify-between flex-wrap gap-3 mb-3">
+              <div class="pill-bar" id="moment-filters">
+                <button class="filter-pill active" data-cat="all"
+                  data-tooltip="Mostra todos os momentos epicos detectados do #1 ate o ultimo.">Todos</button>
+                <button class="filter-pill" data-cat="combate_intenso"
+                  data-tooltip="Filtra tiroteios, explosoes, combos, headshots, raio-X e boss fights.">Combate &amp; Acao</button>
+                <button class="filter-pill" data-cat="morte_cinematografica"
+                  data-tooltip="Filtra mortes brutais do jogador, execucoes, serra eletrica e telas de Game Over.">Mortes Cinematograficas</button>
+                <button class="filter-pill" data-cat="susto_tensao"
+                  data-tooltip="Filtra jump scares, emboscadas e picos subitos de tensao.">Sustos &amp; Tensao</button>
+                <button class="filter-pill" data-cat="acrobacia_cinema"
+                  data-tooltip="Filtra acrobacias, balancos em alta velocidade e finalizacoes cinematograficas.">Cinema &amp; Acrobacias</button>
+              </div>
+              <button id="btn-toggle-long-panel" class="btn btn-sm btn-cyan"
+                data-tooltip="Alterna a visualizacao do painel de Gameplay Longa 16:9 (YouTube Capitulos, SEO e Thumbnail).">
+                <span>Ver Painel YouTube 16:9</span>
+              </button>
+            </div>
+
+            <!-- Ranked Moments Grid -->
+            <div id="moments-grid" class="grid-auto"></div>
+          </div>
+        </section>
+
+        <!-- ================= VIEW 2: BIBLIOTECA DE CLIPES ================= -->
+        <section id="view-biblioteca" class="view-section">
+          <div class="section-head">
+            <div>
+              <h1 class="section-title">Biblioteca de Clipes &amp; Publicacao em 1 Clique</h1>
+              <p class="section-sub">Assista aos MP4 renderizados, copie o Kit Viral do Qwen 3.5 e publique direto nas redes sociais.</p>
+            </div>
+            <div class="flex gap-2">
+              <button id="btn-refresh-clips" class="btn"
+                data-tooltip="Recarrega a lista de videos renderizados na biblioteca.">
+                <span>Atualizar Biblioteca</span>
+              </button>
+            </div>
+          </div>
+          <div id="clips-library-grid" class="grid-auto"></div>
+        </section>
+
+        <!-- ================= VIEW 3: AGENDADOR & PUBLICACAO ================= -->
+        <section id="view-agendador" class="view-section">
+          <div class="section-head">
+            <div>
+              <h1 class="section-title">Agendador &amp; Fila de Publicacao</h1>
+              <p class="section-sub">Planeje datas e horarios para manter constancia no YouTube Shorts, TikTok e Instagram Reels.</p>
+            </div>
+          </div>
+
+          <!-- Piloto Automatico Diario YouTube Shorts (API Oficial) -->
+          <div class="card mb-4" style="border-color:rgba(239,68,68,0.4);background:linear-gradient(145deg,rgba(239,68,68,0.08),var(--bg-surface));">
+            <div class="flex items-center justify-between flex-wrap gap-3 mb-3">
+              <div>
+                <div class="flex items-center gap-2">
+                  <span class="badge badge-red">API OFICIAL YOUTUBE</span>
+                  <span id="autopilot-yt-status-badge" class="badge badge-amber">Verificando conta...</span>
+                </div>
+                <h2 style="margin:6px 0 0;font-size:16px;font-weight:700;color:#fff;">Piloto Automatico Diario YouTube Shorts</h2>
+                <p class="text-xs" style="margin:3px 0 0;">Publica automaticamente 1 clipe inedito por dia no horario fixo escolhido com Titulo, Descricao e #Shorts.</p>
+              </div>
+              <label class="toggle-row" style="padding:8px 12px;"
+                data-tooltip="Liga ou desliga o agendador automatico em segundo plano que envia 1 YouTube Short por dia.">
+                <span style="font-weight:700;color:#fff;font-size:12.5px;">Piloto Diario Ativo</span>
+                <label class="switch">
+                  <input id="yt-autopilot-enabled" type="checkbox" />
+                  <span class="slider"></span>
+                </label>
+              </label>
+            </div>
+
+            <div class="grid-3 mb-3">
+              <div>
+                <label class="field-label">Horario Fixo Diario (Local)</label>
+                <input id="yt-autopilot-time" type="time" class="input" value="18:30"
+                  data-tooltip="Horario fixo em que o ClipRush publicara automaticamente 1 Short inedito todos os dias." />
+              </div>
+              <div>
+                <label class="field-label">Visibilidade no YouTube</label>
+                <select id="yt-autopilot-privacy" class="select"
+                  data-tooltip="Define se os Shorts enviados pelo piloto automatico entram como Publico, Nao Listado ou Privado.">
+                  <option value="public">Publico (Recomendado)</option>
+                  <option value="unlisted">Nao Listado (Revisar antes)</option>
+                  <option value="private">Privado</option>
+                </select>
+              </div>
+              <div style="display:flex;align-items:flex-end;">
+                <button id="btn-save-autopilot" class="btn btn-primary" style="width:100%;"
+                  data-tooltip="Salva o horario diario, privacidade e status ativo do Piloto Automatico YouTube Shorts.">
+                  <span>Salvar Piloto Diario</span>
+                </button>
+              </div>
+            </div>
+
+            <div class="flex flex-wrap gap-2 items-center mb-3" style="padding-top:10px;border-top:1px solid var(--border-subtle);">
+              <select id="yt-autopilot-clip-select" class="select" style="flex:1;min-width:220px;"
+                data-tooltip="Escolha um clipe pronto da Biblioteca para entrar na fila diaria automatica do YouTube."></select>
+              <button id="btn-autopilot-add-one" class="btn btn-cyan"
+                data-tooltip="Adiciona o clipe selecionado ao final da fila diaria do YouTube Shorts.">
+                <span>Adicionar a Fila Diaria</span>
+              </button>
+              <button id="btn-autopilot-import-all" class="btn btn-success"
+                data-tooltip="Importa em lote todos os clipes prontos da Biblioteca para a fila diaria (sem duplicar).">
+                <span>Importar Biblioteca em Lote</span>
+              </button>
+            </div>
+
+            <div id="yt-autopilot-queue-list" class="flex" style="flex-direction:column;gap:8px;"></div>
+          </div>
+
+          <div class="card mb-4">
+            <h3 style="margin:0 0 12px;font-size:14.5px;color:#fff;">Agenda Manual Multi-Plataforma</h3>
+            <div class="grid-3">
+              <div>
+                <label class="field-label">Clipe da Biblioteca (opcional)</label>
+                <select id="sched-clip-select" class="select"
+                  data-tooltip="Preenche automaticamente titulo, descricao e arquivo de um clipe ja renderizado."></select>
+              </div>
+              <div>
+                <label class="field-label">Plataforma</label>
+                <select id="sched-platform" class="select"
+                  data-tooltip="Escolha a rede social de destino desta postagem.">
+                  <option value="youtube_studio">YouTube Studio (Shorts / Video)</option>
+                  <option value="tiktok_studio">TikTok Studio</option>
+                  <option value="facebook_reels">Facebook Reels</option>
+                  <option value="youtube_long">YouTube Gameplay 16:9</option>
+                </select>
+              </div>
+              <div>
+                <label class="field-label">Data e Horario</label>
+                <input id="sched-datetime" type="datetime-local" class="input"
+                  data-tooltip="Defina o dia e horario planejado para publicar este video." />
+              </div>
+            </div>
+            <div class="grid-2 mt-3">
+              <div>
+                <label class="field-label">Titulo Viral</label>
+                <input id="sched-title" class="input" placeholder="Ex: A morte mais absurda no Resident Evil 4!" />
+              </div>
+              <div>
+                <label class="field-label">Descricao + Hashtags</label>
+                <input id="sched-desc" class="input" placeholder="Descricao com gancho de comentario e hashtags..." />
+              </div>
+            </div>
+            <div class="mt-3 flex justify-between items-center">
+              <span class="text-xs">Ao clicar em Publicar na fila, o texto e copiado e a pagina de upload + pasta do MP4 abrem juntas.</span>
+              <button id="btn-add-schedule" class="btn btn-primary"
+                data-tooltip="Salva esta postagem na sua fila de agendamento.">
+                <span>Agendar Postagem</span>
+              </button>
+            </div>
+          </div>
+
+          <div id="schedule-list" class="flex" style="flex-direction:column;gap:10px;"></div>
+        </section>
+
+        <!-- ================= VIEW 4: LIMPEZA DE DISCO ================= -->
+        <section id="view-limpeza" class="view-section">
+          <div class="section-head">
+            <div>
+              <h1 class="section-title">Limpeza de Disco Inteligente</h1>
+              <p class="section-sub">Libere espaco removendo caches de analise, miniaturas antigas ou uploads temporarios com seguranca.</p>
+            </div>
+            <div class="flex gap-2">
+              <button id="btn-scan-disk" class="btn"
+                data-tooltip="Recalcula o espaco ocupado em todas as pastas do ClipRush Studio Pro.">
+                <span>Reescanear Disco</span>
+              </button>
+              <button id="btn-clean-disk" class="btn btn-danger"
+                data-tooltip="Apaga somente os itens marcados nas caixas de selecao abaixo.">
+                <span>Limpar Itens Selecionados</span>
+              </button>
+            </div>
+          </div>
+
+          <div id="disk-summary-bar" class="card mb-4 flex items-center justify-between flex-wrap gap-3"></div>
+          <div id="disk-buckets-grid" class="grid-2"></div>
+        </section>
+
+        <!-- ================= VIEW 5: CONFIGURACOES ================= -->
+        <section id="view-configuracoes" class="view-section">
+          <div class="section-head">
+            <div>
+              <h1 class="section-title">Configuracoes do Estudio</h1>
+              <p class="section-sub">Personalize Ollama (Qwen 3.5 9B), FFmpeg, pasta de saida, Whisper e aceleracao de video.</p>
+            </div>
+            <div class="flex gap-2">
+              <button id="btn-test-xray" class="btn btn-danger"
+                data-tooltip="Dispara uma simulacao segura para validar o Painel Raio-X de Erros e o botao Copiar Erro para IA.">
+                <span>Testar Painel Raio-X</span>
+              </button>
+              <button id="btn-save-settings" class="btn btn-primary"
+                data-tooltip="Salva todas as preferencias permanentemente em data/settings.json.">
+                <span>Salvar Configuracoes</span>
+              </button>
+            </div>
+          </div>
+
+          <!-- Conexao Oficial YouTube (Upload Automatico via OAuth2) -->
+          <div class="card mb-4" style="border-color:rgba(239,68,68,0.38);">
+            <div class="flex items-center justify-between flex-wrap gap-3 mb-3">
+              <div>
+                <div class="flex items-center gap-2">
+                  <h3 style="margin:0;font-size:15px;color:#fff;">Conexao Oficial YouTube (Upload Automatico)</h3>
+                  <span id="yt-conn-badge" class="badge badge-amber">Nao Conectado</span>
+                </div>
+                <p id="yt-channel-name" class="text-xs" style="margin:4px 0 0;">Conecte sua conta via OAuth2 local usando seu arquivo client_secrets.json do Google Cloud.</p>
+              </div>
+              <div class="flex flex-wrap gap-2">
+                <button id="btn-yt-connect" class="btn btn-yt"
+                  data-tooltip="Abre o login oficial do Google via OAuth2 local para autorizar uploads automaticos no seu canal YouTube.">
+                  <span>Conectar Conta YouTube</span>
+                </button>
+                <button id="btn-yt-disconnect" class="btn btn-sm"
+                  data-tooltip="Remove o token OAuth2 salvo localmente e desconecta a conta YouTube.">
+                  <span>Desconectar</span>
+                </button>
+              </div>
+            </div>
+
+            <div class="flex flex-wrap gap-2 items-center">
+              <input id="cfg-yt-secrets-path" class="input" style="flex:1;min-width:280px;"
+                placeholder="D:\ClipRush_Pro_V2\data\client_secrets.json"
+                data-tooltip="Caminho completo do arquivo client_secrets.json baixado nas credenciais OAuth 2.0 do Google Cloud Console." />
+              <input id="yt-secrets-file-input" type="file" accept=".json" class="hidden" />
+              <button id="btn-upload-yt-secrets" class="btn btn-cyan"
+                data-tooltip="Selecione o arquivo client_secrets.json no seu computador para importar direto para a pasta segura do app.">
+                <span>Carregar client_secrets.json</span>
+              </button>
+            </div>
+            <div id="yt-oauth-error" class="text-xs mt-2 hidden" style="color:#FCA5A5;"></div>
+          </div>
+
+          <div class="card">
+            <div class="grid-2">
+              <div>
+                <label class="field-label">URL do Servidor Ollama</label>
+                <input id="cfg-ollama-url" class="input" placeholder="http://localhost:11434"
+                  data-tooltip="Endereco local da API do Ollama usado pelo Qwen 3.5 9B." />
+              </div>
+              <div>
+                <label class="field-label">Modelo Qwen 3.5</label>
+                <input id="cfg-ollama-model" class="input" placeholder="qwen3.5:9b"
+                  data-tooltip="Nome exato do modelo instalado no Ollama (padrao: qwen3.5:9b)." />
+              </div>
+              <div>
+                <label class="field-label">Caminho do Executavel FFmpeg</label>
+                <input id="cfg-ffmpeg-path" class="input"
+                  data-tooltip="Caminho completo do ffmpeg.exe (detectado automaticamente em ClipRush_Universal ou PATH)." />
+              </div>
+              <div>
+                <label class="field-label">Pasta de Saida (Clipes Renderizados)</label>
+                <input id="cfg-output-dir" class="input"
+                  data-tooltip="Pasta onde todos os clipes 9:16, gameplays 16:9 e thumbnails serao salvos." />
+              </div>
+              <div>
+                <label class="field-label">Encoder de Video (GPU / CPU)</label>
+                <select id="cfg-encoder" class="select"
+                  data-tooltip="Auto usa NVIDIA NVENC se disponivel e cai para libx264 automaticamente.">
+                  <option value="auto">Automatico (NVENC se disponivel / libx264)</option>
+                  <option value="h264_nvenc">NVIDIA GPU (h264_nvenc)</option>
+                  <option value="libx264">CPU Alta Compatibilidade (libx264)</option>
+                </select>
+              </div>
+              <div>
+                <label class="field-label">Modelo Whisper (Legendas de Cutscenes)</label>
+                <select id="cfg-whisper-model" class="select"
+                  data-tooltip="Tamanho do modelo faster-whisper usado quando a legenda de personagens estiver ativada.">
+                  <option value="tiny">tiny (Ultrarrapido)</option>
+                  <option value="base">base (Equilibrado - Recomendado)</option>
+                  <option value="small">small (Alta precisao PT-BR)</option>
+                </select>
+              </div>
+              <div>
+                <label class="field-label">Duracao Minima do Clipe (segundos)</label>
+                <input id="cfg-min-sec" type="number" min="6" max="30" class="input"
+                  data-tooltip="Duracao minima de cada corte viral gerado no Modo 1." />
+              </div>
+              <div>
+                <label class="field-label">Duracao Maxima do Clipe (segundos)</label>
+                <input id="cfg-max-sec" type="number" min="15" max="90" class="input"
+                  data-tooltip="Duracao maxima de cada corte viral (ideal entre 30s e 55s para Shorts/Reels)." />
+              </div>
+            </div>
+
+            <div class="toggle-row mt-4"
+              data-tooltip="Envia frames dos melhores momentos para o Qwen 3.5 9B Vision classificar mortes, sustos e gerar titulos virais.">
+              <div>
+                <div style="font-weight:600;color:#fff;">Ativar Visao Computacional com Qwen 3.5 9B</div>
+                <div class="text-xs">Analisa frames dos momentos detectados para identificar execucoes, Game Over e criar ganchos virais precisos.</div>
+              </div>
+              <label class="switch">
+                <input id="cfg-use-vision" type="checkbox" checked />
+                <span class="slider"></span>
+              </label>
+            </div>
+          </div>
+        </section>
+      </main>
+    </div>
+  </div>
+
+  <!-- Assistente Visual YouTube OAuth2 Modal -->
+  <div id="yt-wizard-backdrop" class="wizard-backdrop" role="dialog" aria-modal="true" aria-labelledby="yt-wizard-title">
+    <div class="wizard-modal">
+      <div class="wizard-head">
+        <div class="flex items-center gap-2">
+          <span class="badge badge-red">YOUTUBE API</span>
+          <strong id="yt-wizard-title" style="color:#fff;font-size:15px;">Assistente Guiado — Conectar Conta YouTube</strong>
+        </div>
+        <button id="btn-wizard-close" class="btn btn-sm"
+          data-tooltip="Fecha o assistente de conexao do YouTube.">Fechar</button>
+      </div>
+      <div class="wizard-body">
+        <div class="text-muted" style="color:#E2E8F0;">
+          Para o YouTube permitir o <strong>Piloto Automatico Diario</strong>, basta carregar o arquivo <code>client_secrets.json</code> uma unica vez (leva ~2 minutos):
+        </div>
+
+        <div class="wizard-step-row">
+          <span class="wizard-step-num">1</span>
+          <div>
+            <div style="font-weight:700;color:#fff;">Abra o Google Cloud Console</div>
+            <div class="text-xs">Clique no botao abaixo para abrir direto a pagina de Credenciais e crie ou selecione um projeto (ex: <em>ClipRush Studio</em>).</div>
+          </div>
+        </div>
+
+        <div class="wizard-step-row">
+          <span class="wizard-step-num">2</span>
+          <div>
+            <div style="font-weight:700;color:#fff;">Ative a YouTube Data API v3</div>
+            <div class="text-xs">No menu <strong>APIs e Servicos → Biblioteca</strong>, pesquise por <em>YouTube Data API v3</em> e clique em <strong>Ativar</strong>.</div>
+          </div>
+        </div>
+
+        <div class="wizard-step-row">
+          <span class="wizard-step-num">3</span>
+          <div>
+            <div style="font-weight:700;color:#fff;">Crie o ID do Cliente OAuth (App para Computador)</div>
+            <div class="text-xs">Em <strong>Credenciais → Criar Credenciais → ID do cliente OAuth</strong>, selecione <em>App para computador (Desktop app)</em> e clique em <strong>Fazer download do JSON</strong>.</div>
+          </div>
+        </div>
+
+        <div class="wizard-step-row">
+          <span class="wizard-step-num">4</span>
+          <div>
+            <div style="font-weight:700;color:#fff;">Carregue o arquivo JSON baixado abaixo</div>
+            <div class="text-xs">Assim que importar o <code>client_secrets.json</code>, o ClipRush ja libera o login oficial do seu canal com 1 clique.</div>
+          </div>
+        </div>
+
+        <div class="flex flex-wrap gap-2 mt-2">
+          <a id="btn-wizard-open-console" href="https://console.cloud.google.com/apis/credentials" target="_blank" rel="noopener"
+            class="btn btn-primary" style="text-decoration:none;"
+            data-tooltip="Abre direto a pagina oficial de Credenciais do Google Cloud Console em uma nova aba.">
+            <span>Abrir Google Cloud Console ↗</span>
+          </a>
+          <button id="btn-wizard-upload-secrets" class="btn btn-cyan"
+            data-tooltip="Seleciona o arquivo client_secrets.json baixado no computador e importa direto para o ClipRush.">
+            <span>Carregar client_secrets.json</span>
+          </button>
+        </div>
+
+        <div style="border-top:1px solid var(--border-subtle);padding-top:12px;margin-top:4px;display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;">
+          <span class="text-xs">Prefere publicar agora sem configurar o Google Cloud?</span>
+          <button id="btn-wizard-studio-express" class="btn btn-sm btn-success"
+            data-tooltip="Copia textos prontos, abre https://studio.youtube.com e mostra a pasta de saida com seus MP4 sem precisar de API.">
+            <span>Continuar no Modo Studio Express (1-Clique sem API)</span>
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Painel Raio-X de Erros Modal -->
+  <div id="xray-backdrop" class="xray-backdrop" role="dialog" aria-modal="true" aria-labelledby="xray-title">
+    <div class="xray-modal">
+      <div class="xray-head">
+        <div class="flex items-center gap-2">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#EF4444" stroke-width="2.2"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+          <strong id="xray-title" style="color:#fff;font-size:15px;">Painel Raio-X de Erros</strong>
+          <span id="xray-category" class="badge badge-red">SISTEMA</span>
+        </div>
+        <button id="xray-close-btn" class="btn btn-sm"
+          data-tooltip="Fecha este alerta do Painel Raio-X.">Fechar</button>
+      </div>
+      <div class="xray-body">
+        <div>
+          <div class="text-xs" style="margin-bottom:4px;">1. EXPLICACAO SIMPLES</div>
+          <div id="xray-explanation" style="font-size:14px;font-weight:600;color:#fff;"></div>
+        </div>
+        <div>
+          <div class="text-xs" style="margin-bottom:4px;">2. ARQUIVO E LINHA EXATA</div>
+          <div id="xray-location" style="font-family:Consolas,monospace;color:#67E8F9;font-size:12.5px;background:#0B0D14;padding:8px 10px;border-radius:8px;border:1px solid #222738;"></div>
+        </div>
+        <div>
+          <div class="text-xs" style="margin-bottom:4px;">DETALHE TECNICO</div>
+          <pre id="xray-detail" class="xray-code"></pre>
+        </div>
+        <div class="flex justify-between items-center mt-2">
+          <span class="text-xs">Envie este diagnostico estruturado diretamente para qualquer IA resolver instantaneamente.</span>
+          <button id="xray-copy-ai-btn" class="btn btn-primary"
+            data-tooltip="Copia explicacao, arquivo, linha e traceback formatados para colar na IA.">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+            <span>Copiar Erro para IA</span>
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Toast Stack -->
+  <div id="toast-container" class="toast-container"></div>
+
+  <script type="module" src="/static/js/app.js"></script>
+</body>
+</html>

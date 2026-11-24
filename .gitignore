@@ -89,13 +89,26 @@ dist/
 pip-wheel-metadata/
 
 # ===============================
-# Arquivos de Configuração Local (Opcionais)
+# Arquivos de Configuração e Dados Locais (Protegidos)
 # ===============================
-# Descomente se não quiser versionar configurações locais:
-# data/settings.json
-# data/projects.json
-# data/clips_library.json
-# data/youtube_autopilot.json
+# Dados do usuário, projetos, biblioteca de clipes, agendamentos - NÃO COMMITAR
+data/settings.json
+data/projects.json
+data/clips_library.json
+data/youtube_autopilot.json
+data/games_db.json
+data/overlay.json
+data/copy_history.json
+data/exported_history.json
+data/performance_metrics.json
+data/ranking_weights.json
+data/watch_queue.json
+data/config.json
+data/*.bak
+data/*_backup*
+*.bak
+*_backup*
+backups/
 
 # ===============================
 # OS Specific

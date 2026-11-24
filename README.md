@@ -146,7 +146,7 @@ ollama pull qwen3.5:9b
 ### 2. Clonagem do Repositório
 
 ```powershell
-git clone https://github.com/SEU_USUARIO/ClipRush-Studio-Pro.git
+git clone https://github.com/lcszero44-cell/ClipRush-Studio-Pro.git
 cd ClipRush-Studio-Pro
 ```
 
@@ -315,8 +315,8 @@ MIT License — Use, modifique e distribua livremente. Veja [LICENSE](LICENSE) p
 
 ## 📞 Suporte & Comunidade
 
-- **Issues**: [GitHub Issues](https://github.com/SEU_USUARIO/ClipRush-Studio-Pro/issues) — Bugs, sugestões, dúvidas
-- **Discussões**: [GitHub Discussions](https://github.com/SEU_USUARIO/ClipRush-Studio-Pro/discussions) — Showcase de clipes, dicas, perfis de jogo
+- **Issues**: [GitHub Issues](https://github.com/lcszero44-cell/ClipRush-Studio-Pro/issues) — Bugs, sugestões, dúvidas
+- **Discussões**: [GitHub Discussions](https://github.com/lcszero44-cell/ClipRush-Studio-Pro/discussions) — Showcase de clipes, dicas, perfis de jogo
 
 ---
 

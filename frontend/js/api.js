@@ -1,13 +1,23 @@
 /**
- * Centralized API Client with automatic Painel Raio-X error interception.
+ * Centralized API Client with automatic P0 X-ClipRush-Token injection & Painel Raio-X interception.
  */
 import { showXRayError } from './xray.js';
 
+export function getSessionToken() {
+  if (typeof window !== 'undefined' && window.__CLIPRUSH_TOKEN__) {
+    return String(window.__CLIPRUSH_TOKEN__);
+  }
+  const meta = document.querySelector('meta[name="cliprush-token"]');
+  return meta ? String(meta.getAttribute('content') || '') : '';
+}
+
 export async function apiFetch(url, options = {}, { silentXRay = false } = {}) {
+  const token = getSessionToken();
   const fetchOpts = {
     cache: 'no-store',
     ...options,
     headers: {
+      ...(token ? { 'X-ClipRush-Token': token } : {}),
       ...(options.body && !(options.body instanceof FormData) ? { 'Content-Type': 'application/json' } : {}),
       ...(options.headers || {}),
     },
@@ -21,7 +31,7 @@ export async function apiFetch(url, options = {}, { silentXRay = false } = {}) {
       category: 'REDE',
       explanation_pt: 'Nao foi possivel conectar ao servidor local do ClipRush Studio Pro (http://127.0.0.1:8765).',
       file: 'frontend/js/api.js',
-      line: 18,
+      line: 27,
       technical_detail: String(networkErr),
       ai_copy_text: `Erro de rede ao acessar ${url}: ${networkErr}`,
     };
@@ -65,6 +75,9 @@ export function pollJob(jobId, onProgress) {
         if (job.status === 'done') {
           clearInterval(timer);
           resolve(job.result);
+        } else if (job.status === 'cancelled') {
+          clearInterval(timer);
+          resolve({ cancelled: true });
         } else if (job.status === 'error') {
           clearInterval(timer);
           if (job.xray_error) showXRayError(job.xray_error);

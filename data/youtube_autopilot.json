@@ -2,6 +2,9 @@
   "enabled": false,
   "daily_time": "18:30",
   "privacy_status": "public",
+  "require_human_approval": true,
+  "daily_upload_limit": 2,
   "last_publish_date": "",
+  "daily_uploads_log": {},
   "queue": []
 }

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import secrets
 import shutil
 import subprocess
 import threading
@@ -14,10 +15,17 @@ from typing import Any, Optional
 
 import aiofiles
 from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
+from backend.analytics import (
+    add_performance_record,
+    delete_performance_record,
+    get_analytics_dashboard,
+    import_tiktok_studio_csv,
+    sync_youtube_analytics,
+)
 from backend.analyzer import analyze_gameplay, probe_video
 from backend.config import (
     ASSETS_DIR,
@@ -32,16 +40,59 @@ from backend.config import (
     load_settings,
     save_settings,
 )
-from backend.editor import SUBTITLE_STYLES, extract_clip_frame, render_long_gameplay, render_viral_clip
+from backend.editor import (
+    SUBTITLE_STYLES,
+    create_tiktok_long_version,
+    create_tiktok_short_version,
+    extract_clip_frame,
+    render_long_gameplay,
+    render_viral_clip,
+)
+from backend.copy_engine import generate_multiple_options, get_copy_engine_stats
+from backend.diagnostics import (
+    APP_VERSION,
+    export_backup_zip,
+    get_full_diagnostics,
+    import_backup_zip,
+    run_synthetic_selftest,
+)
 from backend.errors import XRayError, build_xray_from_exception
-from backend.ollama_client import check_ollama_status, generate_youtube_long_kit, regenerate_viral_kit
+from backend.hw_guard import CPUGuard, estimate_processing_time
+from backend.scheduler import (
+    create_ab_test,
+    generate_smart_agenda,
+    get_growth_state,
+    record_ab_winner,
+    update_goals,
+    update_slot_checklist,
+)
+from backend.ollama_client import (
+    analyze_moment_with_qwen,
+    calibrate_platform_hashtags,
+    check_ollama_status,
+    detect_game_with_qwen,
+    generate_youtube_long_kit,
+    get_qwen_five_state,
+    regenerate_viral_kit,
+)
+from backend.watcher import (
+    get_watcher_status,
+    mark_watch_item_status,
+    scan_watch_folder_now,
+    start_watcher_daemon,
+    update_watcher_config,
+)
 from backend.youtube_uploader import (
+    YOUTUBE_AUDIT_WARNING,
+    approve_autopilot_item,
     disconnect_youtube,
+    dpapi_available,
     enqueue_autopilot_clips,
     get_autopilot_state,
     get_youtube_connection_status,
     publish_autopilot_item,
     remove_autopilot_item,
+    save_protected_client_secrets,
     start_autopilot_daemon,
     start_oauth_flow,
     update_autopilot_config,
@@ -49,68 +100,143 @@ from backend.youtube_uploader import (
 from backend.storage import (
     add_clip,
     add_scheduled,
+    annotate_moments_export_status,
     clean_disk_buckets,
+    clear_video_export_history,
     delete_clip,
+    delete_project_media,
     delete_scheduled,
+    find_game_sheet,
     get_clip,
     get_project,
+    get_project_storage_breakdown,
     list_clips,
+    list_games,
     list_projects,
     list_scheduled,
+    load_overlay_config,
+    record_exported_interval,
+    save_overlay_config,
     scan_disk_usage,
     update_clip,
     update_scheduled_status,
+    upsert_game_sheet,
     upsert_project,
+)
+from backend.worker_pool import (
+    cancel_isolated_job,
+    exclusive_heavy_task,
+    get_active_analysis_cut,
+    get_job_state,
+    submit_isolated_job,
 )
 
 CREATE_NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0)
 
-app = FastAPI(title="ClipRush Studio Pro", version="2.0.0")
+# P0 Local Security: Per-startup random session token injected ONLY into local GET /
+APP_SESSION_TOKEN = secrets.token_urlsafe(32)
+ALLOWED_HOSTS = {"127.0.0.1:8765", "localhost:8765", "127.0.0.1", "localhost"}
+ALLOWED_ORIGINS = {"http://127.0.0.1:8765", "http://localhost:8765"}
+MUTATING_METHODS = {"POST", "PUT", "PATCH", "DELETE"}
+
+app = FastAPI(title="ClipRush Studio Pro", version="2.2.0-P1")
 start_autopilot_daemon()
-
-# In-memory background job tracker
-_JOBS: dict[str, dict[str, Any]] = {}
-_JOBS_LOCK = threading.RLock()
+start_watcher_daemon()
 
 
-def _create_job(kind: str, label: str) -> dict[str, Any]:
-    job_id = f"job_{uuid.uuid4().hex[:10]}"
-    job = {
-        "id": job_id,
-        "kind": kind,
-        "label": label,
-        "status": "running",  # running | done | error
-        "progress": 0,
-        "message": "Iniciando...",
-        "result": None,
-        "xray_error": None,
-        "created_at": datetime.now(timezone.utc).isoformat(),
-    }
-    with _JOBS_LOCK:
-        _JOBS[job_id] = job
-    return job
+def _safe_resolve_under(base_dir: Path, rel_path: str) -> Path:
+    """Strictly prevent Path Traversal using Path.resolve().is_relative_to(base_dir.resolve())."""
+    if not rel_path or "\x00" in rel_path:
+        raise HTTPException(status_code=403, detail="Caminho invalido bloqueado por seguranca.")
+    raw_p = Path(rel_path)
+    if raw_p.is_absolute():
+        raise HTTPException(status_code=403, detail="Acesso a caminho absoluto bloqueado (Path Traversal).")
+    base_resolved = base_dir.resolve()
+    try:
+        candidate = (base_resolved / rel_path).resolve()
+    except OSError:
+        raise HTTPException(status_code=403, detail="Caminho invalido bloqueado.")
+    if not candidate.is_relative_to(base_resolved):
+        raise HTTPException(status_code=403, detail="Tentativa de Path Traversal bloqueada.")
+    return candidate
 
 
-def _update_job(job_id: str, **kwargs: Any) -> None:
-    with _JOBS_LOCK:
-        if job_id in _JOBS:
-            _JOBS[job_id].update(kwargs)
+def _is_allowed_local_media_file(candidate: Path) -> bool:
+    """Allow streaming/revealing ONLY files under permitted dirs OR registered project video paths."""
+    try:
+        res = candidate.resolve()
+    except OSError:
+        return False
+    allowed_roots = (get_output_dir().resolve(), THUMBS_DIR.resolve(), UPLOADS_DIR.resolve())
+    if any(res.is_relative_to(root) for root in allowed_roots):
+        return True
+    for proj in list_projects():
+        vp = proj.get("video_path")
+        if vp:
+            try:
+                if Path(vp).resolve() == res:
+                    return True
+            except OSError:
+                pass
+    return False
 
 
-def _get_job(job_id: str) -> Optional[dict[str, Any]]:
-    with _JOBS_LOCK:
-        j = _JOBS.get(job_id)
-        return dict(j) if j else None
-
-
-# ---- Mandatory Cache-Control: no-store Middleware on ALL routes & static files ----
+# ---- P0 Security + Mandatory Cache-Control: no-store Middleware ----
 
 @app.middleware("http")
-async def add_no_store_headers(request: Request, call_next):
+async def security_and_no_store_middleware(request: Request, call_next):
+    # 1. Host header validation (DNS rebinding & LAN exposure guard)
+    host = (request.headers.get("host") or "").strip().lower()
+    if host not in ALLOWED_HOSTS:
+        return JSONResponse(
+            status_code=403,
+            content={
+                "category": "SEGURANCA",
+                "explanation_pt": f"Host nao autorizado ({host}). O ClipRush Studio Pro aceita apenas conexoes locais em 127.0.0.1:8765.",
+                "file": "backend/app.py",
+                "line": 146,
+                "technical_detail": f"Blocked invalid Host header: {host}",
+                "ai_copy_text": f"Blocked Host: {host}",
+            },
+        )
+
+    # 2. Origin header validation when present (blocks cross-origin browser requests)
+    origin = (request.headers.get("origin") or "").strip().rstrip("/").lower()
+    if origin and origin not in ALLOWED_ORIGINS:
+        return JSONResponse(
+            status_code=403,
+            content={
+                "category": "SEGURANCA",
+                "explanation_pt": f"Origem nao autorizada ({origin}). Requisicoes externas foram bloqueadas.",
+                "file": "backend/app.py",
+                "line": 160,
+                "technical_detail": f"Blocked invalid Origin header: {origin}",
+                "ai_copy_text": f"Blocked Origin: {origin}",
+            },
+        )
+
+    # 3. Mandatory X-ClipRush-Token on ALL mutating endpoints (POST, PUT, PATCH, DELETE)
+    if request.method.upper() in MUTATING_METHODS:
+        provided_token = (request.headers.get("x-cliprush-token") or "").strip()
+        if not provided_token or not secrets.compare_digest(provided_token, APP_SESSION_TOKEN):
+            return JSONResponse(
+                status_code=403,
+                content={
+                    "category": "SEGURANCA",
+                    "explanation_pt": "Token de sessao local (X-ClipRush-Token) ausente ou invalido. Recarregue a pagina http://127.0.0.1:8765.",
+                    "file": "backend/app.py",
+                    "line": 175,
+                    "technical_detail": f"Missing or invalid X-ClipRush-Token for {request.method} {request.url.path}",
+                    "ai_copy_text": f"403 Missing X-ClipRush-Token on {request.method} {request.url.path}",
+                },
+            )
+
     response = await call_next(request)
     response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
     response.headers["Pragma"] = "no-cache"
     response.headers["Expires"] = "0"
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["X-Frame-Options"] = "DENY"
     return response
 
 
@@ -134,8 +260,15 @@ class LocalImportRequest(BaseModel):
     profile_id: Optional[str] = None
 
 
+class BrowseLocalFileRequest(BaseModel):
+    profile_id: Optional[str] = "auto"
+
+
 class AnalyzeRequest(BaseModel):
     profile_id: str = "generico"
+    target_mode: str = "hibrido"  # hibrido | tiktok_reels | tiktok_long | youtube_shorts
+    scene_mode: Optional[str] = None  # keep_dialogue | prioritize_gameplay | ignore_cutscenes
+    game_name: Optional[str] = None
 
 
 class MomentPatchRequest(BaseModel):
@@ -143,6 +276,7 @@ class MomentPatchRequest(BaseModel):
     cta_comment: Optional[str] = None
     title: Optional[str] = None
     description: Optional[str] = None
+    hashtags: Optional[list[str]] = None
     start: Optional[float] = None
     end: Optional[float] = None
 
@@ -150,8 +284,9 @@ class MomentPatchRequest(BaseModel):
 class BatchRenderRequest(BaseModel):
     moment_ids: Optional[list[str]] = None
     limit: Optional[int] = None  # 5, 10, 20, or None for all
-    style: str = "viral_blur"  # viral_blur | tela_cheia | clipe_limpo
-    subtitles_mode: str = "off"  # off | whisper
+    skip_exported: bool = True
+    style: str = "fit"  # fit | big | fill | auto | viral_blur | tela_cheia | clipe_limpo
+    subtitles_mode: str = "whisper"  # whisper (default ON) | off
     subtitle_style: str = "amarelo_viral"  # amarelo_viral | branco_clean | destaque_keyword
     enable_hook: bool = True
     enable_impact_zoom: bool = True
@@ -163,13 +298,22 @@ class BatchRenderRequest(BaseModel):
     enable_progress_bar: bool = True
     enable_audio_norm: bool = True
     enable_action_tracking: bool = True
+    enable_slowmo: bool = True
+    enable_anti_factory: bool = True
+    enable_seamless_loop: bool = False
+    overlay_config: Optional[dict[str, Any]] = None
 
 
 class AutoPipelineRequest(BaseModel):
     profile_id: str = "generico"
-    top_n: int = 5
-    style: str = "viral_blur"
-    subtitles_mode: str = "off"
+    target_mode: str = "hibrido"  # hibrido | tiktok_reels | tiktok_long | youtube_shorts
+    scene_mode: Optional[str] = None
+    game_name: Optional[str] = None
+    top_n: int = 10  # 10 = next 10 unseen; 0 = ALL unseen moments in full batch
+    skip_exported: bool = True
+    force_reanalyze: bool = False
+    style: str = "fit"
+    subtitles_mode: str = "whisper"  # whisper (default ON) | off
     subtitle_style: str = "amarelo_viral"
     enable_hook: bool = True
     enable_impact_zoom: bool = True
@@ -181,6 +325,56 @@ class AutoPipelineRequest(BaseModel):
     enable_progress_bar: bool = True
     enable_audio_norm: bool = True
     enable_action_tracking: bool = True
+    enable_slowmo: bool = True
+    enable_anti_factory: bool = True
+    enable_seamless_loop: bool = False
+    overlay_config: Optional[dict[str, Any]] = None
+
+
+class GameDetectRequest(BaseModel):
+    project_id: Optional[str] = None
+    filename: Optional[str] = None
+
+
+class MoreCopyOptionsRequest(BaseModel):
+    count: int = 5
+    game_name: str = ""
+    profile_id: str = "generico"
+    category: str = "combate_intenso"
+    platform_target: str = "youtube_shorts"
+    exclude_titles: list[str] = []
+    trending_tags: Optional[list[str]] = None
+
+
+class TrendingTagsRequest(BaseModel):
+    trending_hashtags: list[str]
+
+
+class WatcherConfigRequest(BaseModel):
+    enabled: Optional[bool] = None
+    folder_path: Optional[str] = None
+
+
+class SmartAgendaRequest(BaseModel):
+    posts_per_day: int = 2
+    days: int = 7
+
+
+class SlotChecklistRequest(BaseModel):
+    checklist: dict[str, bool]
+    status: Optional[str] = None
+
+
+class ABCreateRequest(BaseModel):
+    clip_id: str = ""
+    title_hint: str = ""
+    game_name: str = ""
+    platform_target: str = "tiktok_reels"
+
+
+class ABWinnerRequest(BaseModel):
+    winner: str
+    notes: str = ""
 
 
 class YouTubeConnectRequest(BaseModel):
@@ -191,6 +385,16 @@ class AutopilotConfigRequest(BaseModel):
     enabled: Optional[bool] = None
     daily_time: Optional[str] = None
     privacy_status: Optional[str] = None
+    require_human_approval: Optional[bool] = None
+    daily_upload_limit: Optional[int] = None
+
+
+class AutopilotApproveRequest(BaseModel):
+    approved: bool = True
+
+
+class AutopilotPublishNowRequest(BaseModel):
+    human_approved: bool = False
 
 
 class AutopilotEnqueueRequest(BaseModel):
@@ -232,12 +436,60 @@ def health_status() -> dict[str, Any]:
     ff = discover_ffmpeg()
     ollama = check_ollama_status(timeout=1.5)
     settings = load_settings()
+    cpu_pct = round(CPUGuard().current_cpu_pct(), 1)
+    qwen_state = get_qwen_five_state(active_cut_number=get_active_analysis_cut())
+
+    ram_info: dict[str, Any] = {"used_gb": 0.0, "total_gb": 0.0, "percent": 0.0}
+    battery_info: dict[str, Any] = {"present": False, "plugged": True, "percent": 100, "label": "Energia AC / Desktop"}
+    disk_free_gb = 0.0
+    try:
+        import psutil
+        vm = psutil.virtual_memory()
+        ram_info = {
+            "used_gb": round(vm.used / (1024 ** 3), 2),
+            "total_gb": round(vm.total / (1024 ** 3), 2),
+            "percent": round(vm.percent, 1),
+        }
+        bat = psutil.sensors_battery()
+        if bat is not None:
+            pct = int(round(bat.percent))
+            plugged = bool(bat.power_plugged)
+            battery_info = {
+                "present": True,
+                "plugged": plugged,
+                "percent": pct,
+                "label": f"{'Na tomada' if plugged else 'Na bateria'} ({pct}%)",
+            }
+    except Exception:
+        pass
+    try:
+        disk_free_gb = round(shutil.disk_usage(str(DATA_DIR)).free / (1024 ** 3), 2)
+    except OSError:
+        pass
+
     return {
         "system_ok": True,
         "ffmpeg": ff,
         "ollama": ollama,
+        "qwen_state": qwen_state,
         "output_dir": str(get_output_dir()),
         "settings": settings,
+        "hardware": {
+            "cpu_percent": cpu_pct,
+            "cpu_pause_threshold_pct": int(settings.get("cpu_pause_threshold_pct", 80)),
+            "max_concurrent_heavy": 1,
+            "priority": "BELOW_NORMAL",
+            "ram": ram_info,
+            "disk_free_gb": disk_free_gb,
+            "battery": battery_info,
+        },
+        "security": {
+            "host_bound": "127.0.0.1:8765",
+            "token_protected": True,
+            "dpapi_vault": dpapi_available(),
+        },
+        "copy_engine": get_copy_engine_stats(),
+        "watcher": get_watcher_status(),
     }
 
 
@@ -256,16 +508,146 @@ def api_list_projects() -> dict[str, Any]:
     return {"projects": list_projects()}
 
 
+def _attach_time_estimate(proj: dict[str, Any]) -> dict[str, Any]:
+    settings = load_settings()
+    dur = float((proj.get("meta") or {}).get("duration") or 0.0)
+    proj["time_estimate"] = estimate_processing_time(
+        duration_sec=max(10.0, dur),
+        detailed_mode=bool(settings.get("analysis_detailed_mode", False)),
+        use_vision=bool(settings.get("use_ollama_vision", True)),
+        clip_count=5,
+    )
+    return proj
+
+
+@app.get("/api/projects/stream-local")
+def api_stream_local(path: str, request: Request):
+    candidate = Path(path)
+    if not _is_allowed_local_media_file(candidate):
+        raise HTTPException(
+            status_code=403,
+            detail="Acesso bloqueado: apenas videos de projetos importados ou pastas permitidas podem ser transmitidos.",
+        )
+    return _stream_video_range(request, candidate.resolve())
+
+
 @app.get("/api/projects/{project_id}")
 def api_get_project(project_id: str) -> dict[str, Any]:
     proj = get_project(project_id)
     if not proj:
         raise XRayError("Projeto nao encontrado.", category="SISTEMA", status_code=404)
-    return proj
+    if proj.get("moments") and proj.get("video_path"):
+        annotate_moments_export_status(
+            proj["video_path"], proj["moments"], duration=(proj.get("meta") or {}).get("duration")
+        )
+    return _attach_time_estimate(proj)
+
+
+@app.post("/api/projects/{project_id}/reset-export-history")
+def api_reset_export_history(project_id: str) -> dict[str, Any]:
+    proj = get_project(project_id)
+    if not proj:
+        raise XRayError("Projeto nao encontrado.", category="SISTEMA", status_code=404)
+    clear_video_export_history(proj["video_path"])
+    if proj.get("moments"):
+        annotate_moments_export_status(proj["video_path"], proj["moments"])
+        upsert_project(proj)
+    return {"ok": True, "project": proj}
+
+
+def _open_native_windows_file_dialog() -> str:
+    """Open a topmost native Windows file picker in a dedicated Tk thread (zero file copy)."""
+    result: dict[str, Any] = {"path": "", "error": None}
+
+    def _run_tk() -> None:
+        root = None
+        try:
+            import tkinter as tk
+            from tkinter import filedialog
+
+            root = tk.Tk()
+            root.withdraw()
+            try:
+                root.attributes("-topmost", True)
+                root.lift()
+                root.focus_force()
+            except Exception:
+                pass
+            selected = filedialog.askopenfilename(
+                parent=root,
+                title="Selecionar Gameplay PS4/PS5 - ClipRush Studio Pro",
+                filetypes=[
+                    ("Videos de Gameplay", "*.mp4;*.mkv;*.mov;*.webm;*.avi;*.m4v;*.ts"),
+                    ("Todos os Arquivos", "*.*"),
+                ],
+            )
+            result["path"] = str(selected or "").strip()
+        except Exception as exc:
+            result["error"] = exc
+        finally:
+            if root is not None:
+                try:
+                    root.destroy()
+                except Exception:
+                    pass
+
+    t = threading.Thread(target=_run_tk, daemon=True)
+    t.start()
+    t.join()
+
+    if result["error"] is not None:
+        raise XRayError(
+            "Nao foi possivel abrir o seletor nativo de arquivos do Windows. "
+            "Voce ainda pode arrastar o video ou colar o caminho local diretamente.",
+            category="UPLOAD",
+            technical_detail=str(result["error"]),
+            status_code=500,
+        )
+    return result["path"]
+
+
+@app.post("/api/project/browse-local-file")
+def api_browse_local_file(req: Optional[BrowseLocalFileRequest] = None) -> dict[str, Any]:
+    """Open native Windows file picker and immediately import the selected path with ZERO file copy."""
+    selected_path = _open_native_windows_file_dialog()
+    if not selected_path:
+        return {"cancelled": True, "project": None}
+
+    p = Path(selected_path)
+    if not p.exists() or not p.is_file():
+        raise XRayError(
+            f"O arquivo selecionado nao pode ser lido no disco: {selected_path}",
+            category="UPLOAD",
+            status_code=404,
+            context={"file_path": selected_path},
+        )
+
+    meta = probe_video(str(p))
+    req_profile = req.profile_id if req else "auto"
+    resolved_profile = (
+        detect_game_profile_from_name(p.name)
+        if not req_profile or req_profile == "auto"
+        else req_profile
+    )
+    project = upsert_project(
+        {
+            "name": p.stem,
+            "original_filename": p.name,
+            "video_path": str(p.resolve()),
+            "media_url": f"/api/projects/stream-local?path={str(p.resolve())}",
+            "profile_id": resolved_profile,
+            "meta": meta,
+            "moments": [],
+            "long_edit": None,
+            "youtube_kit": None,
+            "status": "imported",
+        }
+    )
+    return {"cancelled": False, "project": _attach_time_estimate(project)}
 
 
 @app.post("/api/projects/upload")
-async def api_upload_video(
+def api_upload_video(
     file: UploadFile = File(...),
     profile_id: str = Form("auto"),
 ) -> dict[str, Any]:
@@ -284,19 +666,25 @@ async def api_upload_video(
     dest = UPLOADS_DIR / f"{safe_stem}_{uuid.uuid4().hex[:6]}{ext}"
 
     try:
-        async with aiofiles.open(dest, "wb") as out:
-            while True:
-                chunk = await file.read(1024 * 1024)
-                if not chunk:
-                    break
-                await out.write(chunk)
+        with dest.open("wb") as out_f:
+            shutil.copyfileobj(file.file, out_f, length=4 * 1024 * 1024)
     except Exception as exc:
+        if dest.exists():
+            try:
+                dest.unlink()
+            except OSError:
+                pass
         raise XRayError(
-            "Erro ao salvar o arquivo de video enviado no disco.",
+            "Erro ao salvar o arquivo de video enviado no disco. Verifique o espaco livre.",
             category="UPLOAD",
             technical_detail=str(exc),
             status_code=500,
         )
+    finally:
+        try:
+            file.file.close()
+        except Exception:
+            pass
 
     meta = probe_video(str(dest))
     resolved_profile = (
@@ -318,7 +706,7 @@ async def api_upload_video(
             "status": "imported",
         }
     )
-    return project
+    return _attach_time_estimate(project)
 
 
 @app.post("/api/projects/import-local")
@@ -351,15 +739,75 @@ def api_import_local(req: LocalImportRequest) -> dict[str, Any]:
             "status": "imported",
         }
     )
-    return project
+    return _attach_time_estimate(project)
 
 
-@app.get("/api/projects/stream-local")
-def api_stream_local(path: str):
-    p = Path(path)
-    if not p.exists() or not p.is_file():
-        raise HTTPException(status_code=404, detail="Arquivo nao encontrado")
-    return FileResponse(str(p))
+def _stream_video_range(request: Request, file_path: Path, media_type: str = "video/mp4"):
+    """True HTTP 206 Partial Content byte-range streamer so HTML5 <video> players load & seek instantly."""
+    if not file_path.exists() or not file_path.is_file():
+        raise HTTPException(status_code=404, detail="Arquivo de video nao encontrado")
+
+    file_size = file_path.stat().st_size
+    ext = file_path.suffix.lower()
+    if ext == ".jpg" or ext == ".jpeg":
+        return FileResponse(str(file_path), media_type="image/jpeg")
+    if ext == ".png":
+        return FileResponse(str(file_path), media_type="image/png")
+
+    range_header = request.headers.get("range")
+    chunk_size = 512 * 1024  # 512 KB streaming chunks
+
+    if range_header and range_header.lower().startswith("bytes="):
+        spec = range_header.split("=", 1)[1].split(",")[0].strip()
+        start_s, _, end_s = spec.partition("-")
+        try:
+            start = int(start_s) if start_s else 0
+            end = int(end_s) if end_s else min(file_size - 1, start + 4 * 1024 * 1024 - 1)
+        except ValueError:
+            start, end = 0, file_size - 1
+        start = max(0, min(start, file_size - 1))
+        end = max(start, min(end, file_size - 1))
+        content_length = end - start + 1
+
+        def _iter_range():
+            with file_path.open("rb") as fh:
+                fh.seek(start)
+                remaining = content_length
+                while remaining > 0:
+                    data = fh.read(min(chunk_size, remaining))
+                    if not data:
+                        break
+                    remaining -= len(data)
+                    yield data
+
+        return StreamingResponse(
+            _iter_range(),
+            status_code=206,
+            media_type=media_type,
+            headers={
+                "Content-Range": f"bytes {start}-{end}/{file_size}",
+                "Accept-Ranges": "bytes",
+                "Content-Length": str(content_length),
+            },
+        )
+
+    def _iter_full():
+        with file_path.open("rb") as fh:
+            while True:
+                data = fh.read(chunk_size)
+                if not data:
+                    break
+                yield data
+
+    return StreamingResponse(
+        _iter_full(),
+        status_code=200,
+        media_type=media_type,
+        headers={
+            "Accept-Ranges": "bytes",
+            "Content-Length": str(file_size),
+        },
+    )
 
 
 @app.post("/api/projects/{project_id}/analyze")
@@ -369,44 +817,25 @@ def api_analyze_project(project_id: str, req: AnalyzeRequest) -> dict[str, Any]:
         raise XRayError("Projeto nao encontrado para iniciar analise.", category="ANALISE", status_code=404)
 
     profile_id = req.profile_id if req.profile_id in GAME_PROFILES else proj.get("profile_id", "generico")
-    job = _create_job("analyze", f"Analisando {proj['name']}")
-
-    def _worker() -> None:
-        try:
-            def _cb(pct: int, msg: str) -> None:
-                _update_job(job["id"], progress=pct, message=msg)
-
-            result = analyze_gameplay(
-                video_path=proj["video_path"],
-                profile_id=profile_id,
-                project_id=project_id,
-                progress_cb=_cb,
-            )
-
-            # Generate YouTube long-form SEO kit automatically alongside analysis
-            long_edit = result["long_edit"]
-            yt_kit = generate_youtube_long_kit(
-                video_name=proj["name"],
-                profile_id=profile_id,
-                chapters=long_edit["chapters"],
-                total_duration_str=long_edit["edited_duration_str"],
-            )
-
-            proj["profile_id"] = profile_id
-            proj["meta"] = result["meta"]
-            proj["moments"] = result["moments"]
-            proj["boring_skipped_sec"] = result["boring_skipped_sec"]
-            proj["long_edit"] = long_edit
-            proj["youtube_kit"] = yt_kit
-            proj["status"] = "analyzed"
-            upsert_project(proj)
-
-            _update_job(job["id"], status="done", progress=100, message="Analise finalizada!", result=proj)
-        except Exception as exc:
-            xray = build_xray_from_exception(exc, category="ANALISE", context={"project_id": project_id})
-            _update_job(job["id"], status="error", message=xray["explanation_pt"], xray_error=xray)
-
-    threading.Thread(target=_worker, daemon=True).start()
+    target_mode = (
+        req.target_mode
+        if req.target_mode in ("hibrido", "tiktok_reels", "tiktok_long", "youtube_shorts")
+        else "hibrido"
+    )
+    game_name = (req.game_name or proj.get("game_name") or "").strip()
+    game_sheet = find_game_sheet(game_name) if game_name else proj.get("game_sheet")
+    job = submit_isolated_job(
+        kind="analyze",
+        label=f"Analisando {proj['name']}",
+        kwargs={
+            "project_id": project_id,
+            "profile_id": profile_id,
+            "target_mode": target_mode,
+            "scene_mode": req.scene_mode,
+            "game_name": game_name,
+            "game_sheet": game_sheet,
+        },
+    )
     return {"job_id": job["id"], "status": "running"}
 
 
@@ -425,6 +854,8 @@ def api_patch_moment(project_id: str, moment_id: str, req: MomentPatchRequest) -
                 m["title"] = req.title.strip()[:110]
             if req.description is not None:
                 m["description"] = req.description.strip()[:400]
+            if req.hashtags is not None:
+                m["hashtags"] = [str(t).strip() for t in req.hashtags if str(t).strip()][:10]
             if req.start is not None:
                 m["start"] = max(0.0, round(float(req.start), 2))
             if req.end is not None:
@@ -444,15 +875,17 @@ def api_regenerate_moment_metadata(project_id: str, moment_id: str) -> dict[str,
         if m.get("id") == moment_id:
             frames = [m["thumb_path"]] if m.get("thumb_path") and Path(m["thumb_path"]).exists() else []
             next_var = int(m.get("variation_index", 0)) + 1
-            regen = regenerate_viral_kit(
-                frame_paths=frames,
-                profile_id=proj.get("profile_id", "generico"),
-                category=m.get("category", "combate_intenso"),
-                video_name=proj.get("name", "gameplay"),
-                previous_title=m.get("title", ""),
-                previous_hook=m.get("hook_2s", ""),
-                variation_index=next_var,
-            )
+            with exclusive_heavy_task():
+                regen = regenerate_viral_kit(
+                    frame_paths=frames,
+                    profile_id=proj.get("profile_id", "generico"),
+                    category=m.get("category", "combate_intenso"),
+                    video_name=proj.get("name", "gameplay"),
+                    previous_title=m.get("title", ""),
+                    previous_hook=m.get("hook_2s", ""),
+                    variation_index=next_var,
+                    platform_target=m.get("platform_target", "youtube_shorts"),
+                )
             m["hook_2s"] = regen["hook_2s"]
             m["cta_comment"] = regen.get("cta_comment", m.get("cta_comment", "Voce escaparia dessa?"))
             m["title"] = regen["title"]
@@ -468,122 +901,19 @@ def api_regenerate_moment_metadata(project_id: str, moment_id: str) -> dict[str,
 
 @app.post("/api/projects/{project_id}/auto-pipeline")
 def api_auto_pipeline(project_id: str, req: AutoPipelineRequest) -> dict[str, Any]:
-    """1-Click Automatic Mode: Analyze Multimodal -> Qwen 3.5 Vision -> Render Top 5 -> Viral Kit -> Ready for Library."""
+    """Scale Auto Pipeline running in isolated OS process (zero event-loop/GIL blocking)."""
     proj = get_project(project_id)
     if not proj:
         raise XRayError("Projeto nao encontrado para o Modo Automatico.", category="ANALISE", status_code=404)
 
     profile_id = req.profile_id if req.profile_id in GAME_PROFILES else proj.get("profile_id", "generico")
-    top_n = max(1, min(20, int(req.top_n or 5)))
-    job = _create_job("auto_pipeline", f"Modo Automatico Top {top_n}: {proj['name']}")
-
-    def _worker() -> None:
-        rendered_clips = []
-        try:
-            # Stage 1 (0% -> 52%): Multimodal Analysis + Qwen 3.5 Vision
-            def _analyze_cb(pct: int, msg: str) -> None:
-                mapped = max(2, int(pct * 0.50))
-                _update_job(job["id"], progress=mapped, message=f"[Etapa 1/2 Analise] {msg}")
-
-            result = analyze_gameplay(
-                video_path=proj["video_path"],
-                profile_id=profile_id,
-                project_id=project_id,
-                progress_cb=_analyze_cb,
-            )
-
-            long_edit = result["long_edit"]
-            yt_kit = generate_youtube_long_kit(
-                video_name=proj["name"],
-                profile_id=profile_id,
-                chapters=long_edit["chapters"],
-                total_duration_str=long_edit["edited_duration_str"],
-            )
-
-            proj["profile_id"] = profile_id
-            proj["meta"] = result["meta"]
-            proj["moments"] = result["moments"]
-            proj["boring_skipped_sec"] = result["boring_skipped_sec"]
-            proj["long_edit"] = long_edit
-            proj["youtube_kit"] = yt_kit
-            proj["status"] = "analyzed"
-            upsert_project(proj)
-
-            targets = (result["moments"] or [])[:top_n]
-            if not targets:
-                raise XRayError(
-                    "Nenhum momento epico foi detectado neste video para o Modo Automatico.",
-                    category="ANALISE",
-                    status_code=400,
-                )
-
-            # Stage 2 (52% -> 99%): Continuous Render of Top N Clips + Viral Kit
-            total = len(targets)
-            for idx, m in enumerate(targets):
-                pct = 52 + int((idx / total) * 45)
-                _update_job(
-                    job["id"],
-                    progress=pct,
-                    message=f"[Etapa 2/2 Render] Gerando clipe #{m['rank']} ({idx + 1}/{total}) — {m['category_label']}...",
-                )
-                res = render_viral_clip(
-                    video_path=proj["video_path"],
-                    moment=m,
-                    style=req.style,
-                    subtitles_mode=req.subtitles_mode,
-                    subtitle_style=req.subtitle_style,
-                    enable_hook=req.enable_hook,
-                    enable_impact_zoom=req.enable_impact_zoom,
-                    enable_preview_flash=req.enable_preview_flash,
-                    enable_infinite_loop=req.enable_infinite_loop,
-                    enable_cta_comment=req.enable_cta_comment,
-                    enable_impact_sfx=req.enable_impact_sfx,
-                    enable_smart_pacing=req.enable_smart_pacing,
-                    enable_progress_bar=req.enable_progress_bar,
-                    enable_audio_norm=req.enable_audio_norm,
-                    enable_action_tracking=req.enable_action_tracking,
-                    project_name=proj["name"],
-                )
-                clip_record = add_clip(
-                    {
-                        "project_id": project_id,
-                        "project_name": proj["name"],
-                        "profile_id": profile_id,
-                        "detected_game": m.get("detected_game", ""),
-                        "moment_id": m["id"],
-                        "rank": m["rank"],
-                        "score": m["score"],
-                        "category": m["category"],
-                        "category_label": m["category_label"],
-                        "hook_2s": m["hook_2s"],
-                        "cta_comment": m.get("cta_comment", "Voce escaparia dessa?"),
-                        "title": m["title"],
-                        "description": m["description"],
-                        "hashtags": m.get("hashtags", []),
-                        "thumb_url": m.get("thumb_url", ""),
-                        "thumb_path": m.get("thumb_path", ""),
-                        "variation_index": 0,
-                        **res,
-                    }
-                )
-                rendered_clips.append(clip_record)
-
-            _update_job(
-                job["id"],
-                status="done",
-                progress=100,
-                message=f"Modo Automatico concluido! {len(rendered_clips)} clipe(s) prontos na Biblioteca para publicar.",
-                result={"project": proj, "clips": rendered_clips, "count": len(rendered_clips)},
-            )
-        except Exception as exc:
-            xray = build_xray_from_exception(
-                exc,
-                category="AUTO_PIPELINE",
-                context={"project_id": project_id, "rendered_so_far": len(rendered_clips)},
-            )
-            _update_job(job["id"], status="error", message=xray["explanation_pt"], xray_error=xray)
-
-    threading.Thread(target=_worker, daemon=True).start()
+    top_n = int(req.top_n) if req.top_n is not None else 10
+    label_n = "TODOS os Ineditos" if top_n <= 0 else f"Proximos {top_n} Ineditos"
+    job = submit_isolated_job(
+        kind="auto_pipeline",
+        label=f"Lote Automatico ({label_n}): {proj['name']}",
+        kwargs={"project_id": project_id, "profile_id": profile_id, "req": req.model_dump()},
+    )
     return {"job_id": job["id"], "status": "running", "top_n": top_n}
 
 
@@ -595,7 +925,7 @@ def api_render_batch(project_id: str, req: BatchRenderRequest) -> dict[str, Any]
     if not proj:
         raise XRayError("Projeto nao encontrado para renderizacao.", category="RENDER", status_code=404)
 
-    all_moments = proj.get("moments") or []
+    all_moments = annotate_moments_export_status(proj["video_path"], proj.get("moments") or [])
     if not all_moments:
         raise XRayError(
             "Nenhum momento foi analisado ainda neste projeto. Execute a analise antes de exportar.",
@@ -606,85 +936,24 @@ def api_render_batch(project_id: str, req: BatchRenderRequest) -> dict[str, Any]
     if req.moment_ids:
         id_set = set(req.moment_ids)
         targets = [m for m in all_moments if m["id"] in id_set]
-    elif req.limit and req.limit > 0:
-        targets = all_moments[: req.limit]
     else:
-        targets = list(all_moments)
+        pool = [m for m in all_moments if not m.get("already_exported")] if req.skip_exported else list(all_moments)
+        if not pool:
+            raise XRayError(
+                "Todos os momentos encontrados ja foram exportados! Selecione manualmente um card especifico ou clique em 'Resetar Historico'.",
+                category="RENDER",
+                status_code=400,
+            )
+        targets = pool[: req.limit] if (req.limit and req.limit > 0) else pool
 
     if not targets:
         raise XRayError("Nenhum clipe selecionado para renderizar.", category="RENDER", status_code=400)
 
-    job = _create_job("render_batch", f"Renderizando {len(targets)} clipes 9:16")
-
-    def _worker() -> None:
-        rendered_clips = []
-        try:
-            total = len(targets)
-            for idx, m in enumerate(targets):
-                pct = int((idx / total) * 95)
-                _update_job(
-                    job["id"],
-                    progress=max(3, pct),
-                    message=f"Renderizando clipe {idx + 1}/{total} (#{m['rank']} - {m['category_label']})...",
-                )
-                res = render_viral_clip(
-                    video_path=proj["video_path"],
-                    moment=m,
-                    style=req.style,
-                    subtitles_mode=req.subtitles_mode,
-                    subtitle_style=req.subtitle_style,
-                    enable_hook=req.enable_hook,
-                    enable_impact_zoom=req.enable_impact_zoom,
-                    enable_preview_flash=req.enable_preview_flash,
-                    enable_infinite_loop=req.enable_infinite_loop,
-                    enable_cta_comment=req.enable_cta_comment,
-                    enable_impact_sfx=req.enable_impact_sfx,
-                    enable_smart_pacing=req.enable_smart_pacing,
-                    enable_progress_bar=req.enable_progress_bar,
-                    enable_audio_norm=req.enable_audio_norm,
-                    enable_action_tracking=req.enable_action_tracking,
-                    project_name=proj["name"],
-                )
-                clip_record = add_clip(
-                    {
-                        "project_id": project_id,
-                        "project_name": proj["name"],
-                        "profile_id": proj.get("profile_id", "generico"),
-                        "detected_game": m.get("detected_game", ""),
-                        "moment_id": m["id"],
-                        "rank": m["rank"],
-                        "score": m["score"],
-                        "category": m["category"],
-                        "category_label": m["category_label"],
-                        "hook_2s": m["hook_2s"],
-                        "cta_comment": m.get("cta_comment", "Voce escaparia dessa?"),
-                        "title": m["title"],
-                        "description": m["description"],
-                        "hashtags": m.get("hashtags", []),
-                        "thumb_url": m.get("thumb_url", ""),
-                        "thumb_path": m.get("thumb_path", ""),
-                        "variation_index": int(m.get("variation_index", 0)),
-                        **res,
-                    }
-                )
-                rendered_clips.append(clip_record)
-
-            _update_job(
-                job["id"],
-                status="done",
-                progress=100,
-                message=f"Concluido! {len(rendered_clips)} clipe(s) salvos na pasta de saida.",
-                result={"clips": rendered_clips, "count": len(rendered_clips)},
-            )
-        except Exception as exc:
-            xray = build_xray_from_exception(
-                exc,
-                category="RENDER",
-                context={"project_id": project_id, "rendered_so_far": len(rendered_clips)},
-            )
-            _update_job(job["id"], status="error", message=xray["explanation_pt"], xray_error=xray)
-
-    threading.Thread(target=_worker, daemon=True).start()
+    job = submit_isolated_job(
+        kind="render_batch",
+        label=f"Renderizando {len(targets)} clipes 9:16",
+        kwargs={"project_id": project_id, "target_ids": [m["id"] for m in targets], "req": req.model_dump()},
+    )
     return {"job_id": job["id"], "total": len(targets), "status": "running"}
 
 
@@ -701,59 +970,25 @@ def api_render_long(project_id: str) -> dict[str, Any]:
             status_code=400,
         )
 
-    job = _create_job("render_long", f"Exportando Gameplay 16:9 ({proj['name']})")
-
-    def _worker() -> None:
-        try:
-            def _cb(pct: int, msg: str) -> None:
-                _update_job(job["id"], progress=pct, message=msg)
-
-            res = render_long_gameplay(
-                video_path=proj["video_path"],
-                keep_segments=long_edit["keep_segments"],
-                best_thumb_sec=long_edit.get("best_thumb_sec", 0.0),
-                project_name=proj["name"],
-                progress_cb=_cb,
-            )
-            yt_kit = proj.get("youtube_kit") or {}
-            clip_record = add_clip(
-                {
-                    "project_id": project_id,
-                    "project_name": proj["name"],
-                    "profile_id": proj.get("profile_id", "generico"),
-                    "rank": 0,
-                    "score": 100,
-                    "category": "youtube_long",
-                    "category_label": "Gameplay 16:9 YouTube",
-                    "hook_2s": "",
-                    "title": (yt_kit.get("titles") or [f"{proj['name']} - Gameplay Editada 1080p"])[0],
-                    "description": yt_kit.get("description", ""),
-                    "hashtags": [f"#{t.replace(' ', '')}" for t in (yt_kit.get("tags") or [])[:6]],
-                    "youtube_kit": yt_kit,
-                    **res,
-                }
-            )
-            _update_job(
-                job["id"],
-                status="done",
-                progress=100,
-                message="Gameplay Longa 16:9 e Thumbnail 1080p exportadas com sucesso!",
-                result={"clip": clip_record, "youtube_kit": yt_kit},
-            )
-        except Exception as exc:
-            xray = build_xray_from_exception(exc, category="RENDER", context={"project_id": project_id, "mode": "long_16_9"})
-            _update_job(job["id"], status="error", message=xray["explanation_pt"], xray_error=xray)
-
-    threading.Thread(target=_worker, daemon=True).start()
+    job = submit_isolated_job(
+        kind="render_long",
+        label=f"Exportando Gameplay 16:9 ({proj['name']})",
+        kwargs={"project_id": project_id},
+    )
     return {"job_id": job["id"], "status": "running"}
 
 
 @app.get("/api/jobs/{job_id}")
 def api_get_job(job_id: str) -> dict[str, Any]:
-    job = _get_job(job_id)
+    job = get_job_state(job_id)
     if not job:
         raise XRayError("Tarefa em segundo plano nao encontrada.", category="SISTEMA", status_code=404)
     return job
+
+
+@app.post("/api/jobs/{job_id}/cancel")
+def api_cancel_job(job_id: str) -> dict[str, Any]:
+    return cancel_isolated_job(job_id)
 
 
 # ---- Clip Library ----
@@ -761,6 +996,119 @@ def api_get_job(job_id: str) -> dict[str, Any]:
 @app.get("/api/clips")
 def api_list_clips() -> dict[str, Any]:
     return {"clips": list_clips()}
+
+
+@app.post("/api/clips/{clip_id}/create-tiktok-25s")
+def api_create_tiktok_25s(clip_id: str) -> dict[str, Any]:
+    """Create a punchy 25s TikTok/Reels cut from an already-rendered clip (>35s) preserving
+    the first 3.5s Visual Hook + the 21.5s most intense climax window without re-reading the original gameplay."""
+    clip = get_clip(clip_id)
+    if not clip:
+        raise XRayError("Clipe nao encontrado na biblioteca.", category="RENDER", status_code=404)
+
+    with exclusive_heavy_task():
+        res = create_tiktok_short_version(
+            clip_path=clip.get("file_path", ""),
+            project_name=clip.get("project_name") or "clipe",
+        )
+    tiktok_tags = calibrate_platform_hashtags(
+        clip.get("hashtags", []),
+        platform_target="tiktok_reels",
+        profile_id=clip.get("profile_id", "generico"),
+        detected_game=clip.get("detected_game", ""),
+    )
+    short_title = (clip.get("title") or "Clipe Epico").replace("#Shorts", "").strip()
+    new_clip = add_clip(
+        {
+            "project_id": clip.get("project_id", ""),
+            "project_name": clip.get("project_name", ""),
+            "source_video_path": clip.get("source_video_path", ""),
+            "start": clip.get("start", 0.0),
+            "end": clip.get("end", 0.0),
+            "peak": clip.get("peak", 0.0),
+            "profile_id": clip.get("profile_id", "generico"),
+            "detected_game": clip.get("detected_game", ""),
+            "moment_id": clip.get("moment_id", ""),
+            "parent_clip_id": clip_id,
+            "is_short_25s_variant": True,
+            "rank": clip.get("rank", 1),
+            "score": clip.get("score", 90),
+            "category": clip.get("category", "combate_intenso"),
+            "category_label": clip.get("category_label", "Combate & Acao"),
+            "platform_target": "tiktok_reels",
+            "platform_badge": "Ideal TikTok / Reels (Versao 25s)",
+            "hook_2s": clip.get("hook_2s", ""),
+            "cta_comment": clip.get("cta_comment", "Voce escaparia dessa?"),
+            "title": short_title,
+            "description": clip.get("description", ""),
+            "hashtags": tiktok_tags,
+            "thumb_url": clip.get("thumb_url", ""),
+            "thumb_path": clip.get("thumb_path", ""),
+            "variation_index": 0,
+            **res,
+        }
+    )
+    return new_clip
+
+
+@app.post("/api/clips/{clip_id}/create-tiktok-long")
+def api_create_tiktok_long(clip_id: str) -> dict[str, Any]:
+    """Generate a Monetizable TikTok (61s-90s) complete expanded version of the same moment
+    by expanding context before and after the action peak from the source gameplay."""
+    clip = get_clip(clip_id)
+    if not clip:
+        raise XRayError("Clipe nao encontrado na biblioteca.", category="RENDER", status_code=404)
+
+    source_video = clip.get("source_video_path") or ""
+    if (not source_video or not Path(source_video).exists()) and clip.get("project_id"):
+        proj = get_project(clip["project_id"])
+        if proj and proj.get("video_path"):
+            source_video = proj["video_path"]
+
+    with exclusive_heavy_task():
+        res = create_tiktok_long_version(
+            source_video_path=source_video,
+            clip_meta=clip,
+            project_name=clip.get("project_name") or "clipe",
+        )
+
+    settings = load_settings()
+    tk_min = int(settings.get("tiktok_long_min_sec", 61))
+    tk_max = int(settings.get("tiktok_long_max_sec", 90))
+    long_tags = calibrate_platform_hashtags(
+        clip.get("hashtags", []),
+        platform_target="tiktok_long",
+        profile_id=clip.get("profile_id", "generico"),
+        detected_game=clip.get("detected_game", ""),
+    )
+    long_title = (clip.get("title") or "Gameplay Completa").replace("#Shorts", "").strip()
+    new_clip = add_clip(
+        {
+            "project_id": clip.get("project_id", ""),
+            "project_name": clip.get("project_name", ""),
+            "profile_id": clip.get("profile_id", "generico"),
+            "detected_game": clip.get("detected_game", ""),
+            "moment_id": clip.get("moment_id", ""),
+            "parent_clip_id": clip_id,
+            "is_tiktok_long_variant": True,
+            "rank": clip.get("rank", 1),
+            "score": clip.get("score", 92),
+            "category": clip.get("category", "combate_intenso"),
+            "category_label": clip.get("category_label", "Combate & Acao"),
+            "platform_target": "tiktok_long",
+            "platform_badge": f"TikTok Monetizavel ({tk_min}s-{tk_max}s)",
+            "hook_2s": clip.get("hook_2s", ""),
+            "cta_comment": clip.get("cta_comment", "Valeu esperar ate o fim?"),
+            "title": long_title,
+            "description": clip.get("description", ""),
+            "hashtags": long_tags,
+            "thumb_url": clip.get("thumb_url", ""),
+            "thumb_path": clip.get("thumb_path", ""),
+            "variation_index": 0,
+            **res,
+        }
+    )
+    return new_clip
 
 
 @app.post("/api/clips/{clip_id}/regenerate-metadata")
@@ -780,15 +1128,17 @@ def api_regenerate_clip_metadata(clip_id: str) -> dict[str, Any]:
             frames.append(extracted)
 
     next_var = int(clip.get("variation_index", 0)) + 1
-    regen = regenerate_viral_kit(
-        frame_paths=frames,
-        profile_id=clip.get("profile_id", "generico"),
-        category=clip.get("category", "combate_intenso"),
-        video_name=clip.get("project_name") or clip.get("file_name") or "gameplay",
-        previous_title=clip.get("title", ""),
-        previous_hook=clip.get("hook_2s", ""),
-        variation_index=next_var,
-    )
+    with exclusive_heavy_task():
+        regen = regenerate_viral_kit(
+            frame_paths=frames,
+            profile_id=clip.get("profile_id", "generico"),
+            category=clip.get("category", "combate_intenso"),
+            video_name=clip.get("project_name") or clip.get("file_name") or "gameplay",
+            previous_title=clip.get("title", ""),
+            previous_hook=clip.get("hook_2s", ""),
+            variation_index=next_var,
+            platform_target=clip.get("platform_target", "youtube_shorts"),
+        )
 
     updated = update_clip(
         clip_id,
@@ -805,6 +1155,15 @@ def api_regenerate_clip_metadata(clip_id: str) -> dict[str, Any]:
     )
     if not updated:
         raise XRayError("Falha ao salvar a nova variacao do clipe.", category="SISTEMA", status_code=500)
+    return updated
+
+
+@app.patch("/api/clips/{clip_id}")
+def api_patch_clip(clip_id: str, payload: dict[str, Any]) -> dict[str, Any]:
+    allowed = {k: payload[k] for k in ("title", "description", "hashtags", "hook_2s", "cta_comment") if k in payload}
+    updated = update_clip(clip_id, allowed)
+    if not updated:
+        raise XRayError("Clipe nao encontrado na biblioteca.", category="SISTEMA", status_code=404)
     return updated
 
 
@@ -860,21 +1219,14 @@ async def api_youtube_upload_secrets(file: UploadFile = File(...)) -> dict[str, 
             status_code=400,
         )
     raw = await file.read()
-    try:
-        parsed = json.loads(raw.decode("utf-8"))
-        if not isinstance(parsed, dict) or not ("installed" in parsed or "web" in parsed):
-            raise ValueError("JSON sem estrutura 'installed' ou 'web'.")
-    except Exception as exc:
-        raise XRayError(
-            "O JSON enviado nao parece um arquivo client_secrets.json valido do Google Cloud.",
-            category="YOUTUBE_AUTH",
-            technical_detail=str(exc),
-            status_code=400,
-        )
-    dest = DATA_DIR / "client_secrets.json"
-    dest.write_bytes(raw)
-    save_settings({"youtube_client_secrets_path": str(dest)})
-    return {"ok": True, "path": str(dest), "status": get_youtube_connection_status()}
+    vault_res = save_protected_client_secrets(raw)
+    return {
+        "ok": True,
+        "path": vault_res["path"],
+        "vault": vault_res["vault"],
+        "audit_warning": YOUTUBE_AUDIT_WARNING,
+        "status": get_youtube_connection_status(),
+    }
 
 
 @app.post("/api/youtube/connect")
@@ -898,7 +1250,15 @@ def api_youtube_autopilot_config(req: AutopilotConfigRequest) -> dict[str, Any]:
         enabled=req.enabled,
         daily_time=req.daily_time,
         privacy_status=req.privacy_status,
+        require_human_approval=req.require_human_approval,
+        daily_upload_limit=req.daily_upload_limit,
     )
+
+
+@app.post("/api/youtube/autopilot/approve/{item_id}")
+def api_youtube_autopilot_approve(item_id: str, req: Optional[AutopilotApproveRequest] = None) -> dict[str, Any]:
+    approved = req.approved if req is not None else True
+    return approve_autopilot_item(item_id, approved=approved)
 
 
 @app.post("/api/youtube/autopilot/queue")
@@ -923,8 +1283,12 @@ def api_youtube_autopilot_remove(item_id: str) -> dict[str, Any]:
 
 
 @app.post("/api/youtube/autopilot/publish-now/{item_id}")
-def api_youtube_autopilot_publish_now(item_id: str) -> dict[str, Any]:
-    return publish_autopilot_item(item_id, mark_daily_slot=False)
+def api_youtube_autopilot_publish_now(
+    item_id: str,
+    req: Optional[AutopilotPublishNowRequest] = None,
+) -> dict[str, Any]:
+    human_approved = bool(req.human_approved) if req is not None else False
+    return publish_autopilot_item(item_id, mark_daily_slot=False, human_approved=human_approved)
 
 
 # ---- Disk Cleanup ----
@@ -937,6 +1301,249 @@ def api_disk_scan() -> dict[str, Any]:
 @app.post("/api/disk/clean")
 def api_disk_clean(req: DiskCleanRequest) -> dict[str, Any]:
     return clean_disk_buckets(req.bucket_ids)
+
+
+# ---- P1: Game Sheets, Combinatorial Copy Engine, Visual 9:16 Overlay & PS4 Watch Folder ----
+
+@app.get("/api/games")
+def api_list_games() -> dict[str, Any]:
+    settings = load_settings()
+    return {
+        "games": list_games(),
+        "trending_hashtags": settings.get("trending_hashtags") or [],
+    }
+
+
+@app.post("/api/games")
+def api_upsert_game(payload: dict[str, Any]) -> dict[str, Any]:
+    try:
+        saved = upsert_game_sheet(payload)
+        return {"ok": True, "game": saved, "games": list_games()}
+    except ValueError as exc:
+        raise XRayError(str(exc), category="SISTEMA", status_code=400)
+
+
+@app.post("/api/games/detect")
+def api_detect_game(req: GameDetectRequest) -> dict[str, Any]:
+    frame_path: Optional[str] = None
+    filename = req.filename or ""
+    if req.project_id:
+        proj = get_project(req.project_id)
+        if proj:
+            filename = proj.get("original_filename") or proj.get("name") or filename
+            vp = proj.get("video_path")
+            if vp and Path(vp).exists():
+                tmp_frame = THUMBS_DIR / f"detect_{req.project_id}.jpg"
+                frame_path = extract_clip_frame(vp, tmp_frame, at_ratio=0.25)
+    with exclusive_heavy_task():
+        res = detect_game_with_qwen(frame_path, filename=filename)
+    return res
+
+
+@app.post("/api/copy/more-options")
+def api_copy_more_options(req: MoreCopyOptionsRequest) -> dict[str, Any]:
+    sheet = find_game_sheet(req.game_name) if req.game_name else None
+    options = generate_multiple_options(
+        count=req.count,
+        game_name=req.game_name,
+        profile_id=req.profile_id,
+        category=req.category,
+        platform_target=req.platform_target,
+        game_sheet=sheet,
+        exclude_titles=req.exclude_titles,
+        trending_tags=req.trending_tags,
+        record_history=True,
+    )
+    return {"options": options, "stats": get_copy_engine_stats()}
+
+
+@app.put("/api/copy/trending")
+def api_save_trending_tags(req: TrendingTagsRequest) -> dict[str, Any]:
+    cleaned = []
+    seen = set()
+    for t in req.trending_hashtags:
+        s = str(t).strip()
+        if not s:
+            continue
+        if not s.startswith("#"):
+            s = f"#{s.replace(' ', '')}"
+        if s.lower() not in seen:
+            seen.add(s.lower())
+            cleaned.append(s)
+    cfg = save_settings({"trending_hashtags": cleaned[:20]})
+    return {"ok": True, "trending_hashtags": cfg.get("trending_hashtags", [])}
+
+
+@app.get("/api/overlay")
+def api_get_overlay() -> dict[str, Any]:
+    return load_overlay_config()
+
+
+@app.put("/api/overlay")
+def api_put_overlay(payload: dict[str, Any]) -> dict[str, Any]:
+    return save_overlay_config(payload)
+
+
+@app.get("/api/watcher/status")
+def api_watcher_status() -> dict[str, Any]:
+    return get_watcher_status()
+
+
+@app.put("/api/watcher/config")
+def api_watcher_config(req: WatcherConfigRequest) -> dict[str, Any]:
+    return update_watcher_config(enabled=req.enabled, folder_path=req.folder_path)
+
+
+@app.post("/api/watcher/scan-now")
+def api_watcher_scan_now() -> dict[str, Any]:
+    return scan_watch_folder_now(require_stability=False)
+
+
+@app.post("/api/watcher/queue/{item_id}/import")
+def api_watcher_import_item(item_id: str) -> dict[str, Any]:
+    st = get_watcher_status()
+    item = next((q for q in st.get("queue", []) if q.get("id") == item_id), None)
+    if not item:
+        raise XRayError("Item da pasta monitorada nao encontrado.", category="WATCHER", status_code=404)
+    p = Path(item["file_path"])
+    if not p.exists() or not p.is_file():
+        raise XRayError(f"Arquivo nao acessivel no momento: {p}", category="WATCHER", status_code=404)
+    meta = probe_video(str(p))
+    profile_id = detect_game_profile_from_name(p.name)
+    sheet = find_game_sheet(p.stem)
+    project = upsert_project(
+        {
+            "name": p.stem,
+            "original_filename": p.name,
+            "video_path": str(p.resolve()),
+            "media_url": f"/api/projects/stream-local?path={str(p.resolve())}",
+            "profile_id": sheet["profile_id"] if sheet else profile_id,
+            "game_name": sheet["official_name"] if sheet else "",
+            "game_sheet": sheet,
+            "meta": meta,
+            "moments": [],
+            "long_edit": None,
+            "youtube_kit": None,
+            "status": "imported",
+        }
+    )
+    mark_watch_item_status(item_id, "importado")
+    return {"ok": True, "project": _attach_time_estimate(project), "watcher": get_watcher_status()}
+
+
+@app.delete("/api/watcher/queue/{item_id}")
+def api_watcher_dismiss_item(item_id: str) -> dict[str, Any]:
+    return mark_watch_item_status(item_id, "descartado")
+
+
+@app.post("/api/system/open-logs")
+def api_open_logs() -> dict[str, Any]:
+    log_file = DATA_DIR / "launcher.log"
+    if not log_file.exists():
+        log_file.write_text("", encoding="utf-8")
+    if os.name == "nt":
+        subprocess.Popen(["explorer", "/select,", str(log_file.resolve())])
+    return {"ok": True, "path": str(log_file)}
+
+
+# ---- P2: Performance Analytics, Smart Agenda/A/B/Goals, Per-Project Storage, Backup .zip & Diagnostics ----
+
+@app.get("/api/analytics/dashboard")
+def api_analytics_dashboard() -> dict[str, Any]:
+    return get_analytics_dashboard()
+
+
+@app.post("/api/analytics/record")
+def api_analytics_record(payload: dict[str, Any]) -> dict[str, Any]:
+    return add_performance_record(payload)
+
+
+@app.delete("/api/analytics/record/{record_id}")
+def api_analytics_delete(record_id: str) -> dict[str, Any]:
+    return delete_performance_record(record_id)
+
+
+@app.post("/api/analytics/import-tiktok-csv")
+async def api_analytics_import_csv(file: UploadFile = File(...)) -> dict[str, Any]:
+    raw = await file.read()
+    return import_tiktok_studio_csv(raw)
+
+
+@app.post("/api/analytics/sync-youtube")
+def api_analytics_sync_youtube() -> dict[str, Any]:
+    return sync_youtube_analytics()
+
+
+@app.get("/api/growth/state")
+def api_growth_state() -> dict[str, Any]:
+    return get_growth_state()
+
+
+@app.post("/api/growth/agenda/generate")
+def api_growth_agenda_generate(req: SmartAgendaRequest) -> dict[str, Any]:
+    return generate_smart_agenda(posts_per_day=req.posts_per_day, days=req.days)
+
+
+@app.patch("/api/growth/agenda/{slot_id}")
+def api_growth_agenda_slot(slot_id: str, req: SlotChecklistRequest) -> dict[str, Any]:
+    return update_slot_checklist(slot_id, req.checklist, status=req.status)
+
+
+@app.post("/api/growth/ab")
+def api_growth_ab_create(req: ABCreateRequest) -> dict[str, Any]:
+    return create_ab_test(
+        clip_id=req.clip_id,
+        title_hint=req.title_hint,
+        game_name=req.game_name,
+        platform_target=req.platform_target,
+    )
+
+
+@app.post("/api/growth/ab/{test_id}/winner")
+def api_growth_ab_winner(test_id: str, req: ABWinnerRequest) -> dict[str, Any]:
+    return record_ab_winner(test_id, winner=req.winner, notes=req.notes)
+
+
+@app.put("/api/growth/goals")
+def api_growth_goals(payload: dict[str, Any]) -> dict[str, Any]:
+    return update_goals(payload)
+
+
+@app.get("/api/disk/projects")
+def api_disk_projects() -> dict[str, Any]:
+    return get_project_storage_breakdown()
+
+
+@app.delete("/api/disk/projects/{project_id}")
+def api_disk_delete_project(project_id: str, target: str = "renders") -> dict[str, Any]:
+    return delete_project_media(project_id, target=target)
+
+
+@app.get("/api/backup/export")
+def api_backup_export():
+    zip_bytes, filename = export_backup_zip()
+    return Response(
+        content=zip_bytes,
+        media_type="application/zip",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+@app.post("/api/backup/import")
+async def api_backup_import(file: UploadFile = File(...)) -> dict[str, Any]:
+    raw = await file.read()
+    return import_backup_zip(raw)
+
+
+@app.get("/api/diagnostics")
+def api_diagnostics() -> dict[str, Any]:
+    return get_full_diagnostics()
+
+
+@app.post("/api/diagnostics/selftest")
+def api_diagnostics_selftest() -> dict[str, Any]:
+    with exclusive_heavy_task():
+        return run_synthetic_selftest()
 
 
 # ---- Settings ----
@@ -965,6 +1572,11 @@ def api_open_output() -> dict[str, Any]:
 @app.post("/api/system/reveal-file")
 def api_reveal_file(req: RevealFileRequest) -> dict[str, Any]:
     p = Path(req.file_path)
+    if not _is_allowed_local_media_file(p):
+        raise HTTPException(
+            status_code=403,
+            detail="Acao bloqueada: somente arquivos de saida ou projetos importados podem ser revelados no Explorer.",
+        )
     if os.name == "nt":
         if p.exists():
             subprocess.Popen(["explorer", "/select,", str(p.resolve())])
@@ -999,19 +1611,33 @@ def api_test_xray() -> dict[str, Any]:
     )
 
 
-# ---- Media & Static Mounts ----
+# ---- Strict Path-Traversal-Protected Media & Static Mounts ----
 
 app.mount("/assets", StaticFiles(directory=str(ASSETS_DIR)), name="assets")
-app.mount("/media/thumbs", StaticFiles(directory=str(THUMBS_DIR)), name="media_thumbs")
-app.mount("/media/uploads", StaticFiles(directory=str(UPLOADS_DIR)), name="media_uploads")
 
 
-@app.get("/media/saida/{filename}")
-def serve_output_media(filename: str):
-    target = (get_output_dir() / filename).resolve()
-    if not target.exists() or target.parent != get_output_dir().resolve():
-        raise HTTPException(status_code=404, detail="Arquivo de saida nao encontrado")
+@app.get("/media/thumbs/{filename:path}")
+def serve_thumb_media(filename: str):
+    target = _safe_resolve_under(THUMBS_DIR, filename)
+    if not target.exists() or not target.is_file():
+        raise HTTPException(status_code=404, detail="Miniatura nao encontrada")
     return FileResponse(str(target))
+
+
+@app.get("/media/uploads/{filename:path}")
+def serve_upload_media(filename: str, request: Request):
+    target = _safe_resolve_under(UPLOADS_DIR, filename)
+    if not target.exists() or not target.is_file():
+        raise HTTPException(status_code=404, detail="Upload nao encontrado")
+    return _stream_video_range(request, target)
+
+
+@app.get("/media/saida/{filename:path}")
+def serve_output_media(filename: str, request: Request):
+    target = _safe_resolve_under(get_output_dir(), filename)
+    if not target.exists() or not target.is_file():
+        raise HTTPException(status_code=404, detail="Arquivo de saida nao encontrado")
+    return _stream_video_range(request, target)
 
 
 app.mount("/static", StaticFiles(directory=str(FRONTEND_DIR)), name="static")
@@ -1019,4 +1645,13 @@ app.mount("/static", StaticFiles(directory=str(FRONTEND_DIR)), name="static")
 
 @app.get("/")
 def serve_index():
-    return FileResponse(str(FRONTEND_DIR / "index.html"))
+    """Inject the per-startup random X-ClipRush-Token securely into the local HTML page."""
+    html = (FRONTEND_DIR / "index.html").read_text(encoding="utf-8")
+    token_snippet = (
+        f'<meta name="cliprush-token" content="{APP_SESSION_TOKEN}" />\n'
+        f'  <script>window.__CLIPRUSH_TOKEN__ = {json.dumps(APP_SESSION_TOKEN)};</script>\n'
+        "</head>"
+    )
+    if "</head>" in html:
+        html = html.replace("</head>", token_snippet, 1)
+    return HTMLResponse(content=html, status_code=200)

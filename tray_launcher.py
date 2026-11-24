@@ -39,8 +39,9 @@ from PIL import Image
 
 from backend.config import ASSETS_DIR, PREFERRED_FFMPEG_BIN, get_output_dir
 
-HOST = "127.0.0.1"
+HOST = "127.0.0.1"  # P0 Security: strict loopback-only bind (inaccessible from LAN/Wi-Fi)
 PORT = 8765
+assert HOST == "127.0.0.1", "ClipRush Studio Pro must bind exclusively to 127.0.0.1"
 APP_URL = f"http://{HOST}:{PORT}"
 HEALTH_URL = f"{APP_URL}/api/health/live"
 CREATE_NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0)

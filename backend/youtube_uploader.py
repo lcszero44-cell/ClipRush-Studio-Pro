@@ -1,10 +1,18 @@
-"""Official YouTube Data API v3 integration & Daily Shorts Autopilot Scheduler.
-Uses google-api-python-client + google-auth-oauthlib with local OAuth2 flow,
-automatic token refresh, resumable Shorts upload (#Shorts), and background daily publishing."""
+"""Official YouTube Data API v3 integration & Protected Daily Shorts Autopilot Scheduler.
+P0 Security & Account Protection Upgrades:
+- Credentials & OAuth2 tokens encrypted at rest via Windows DPAPI (win32crypt.CryptProtectData)
+  with transparent migration from legacy plaintext youtube_token.json / client_secrets.json.
+- Clear warning for unverified Google Cloud API projects (videos uploaded as PRIVATE by default).
+- Mandatory explicit human approval before any upload by default (require_human_approval=True).
+- Configurable daily upload cap (default: 2 uploads/day) enforced on both manual & autopilot uploads.
+"""
 
 from __future__ import annotations
 
 import json
+import os
+import shutil
+import tempfile
 import threading
 import time
 import uuid
@@ -15,13 +23,28 @@ from typing import Any, Optional
 from backend.config import DATA_DIR, load_settings, save_settings
 from backend.errors import XRayError
 
+try:
+    import win32crypt
+except Exception:
+    win32crypt = None  # type: ignore[assignment]
+
 SCOPES = [
     "https://www.googleapis.com/auth/youtube.upload",
     "https://www.googleapis.com/auth/youtube.readonly",
 ]
-TOKEN_FILE = DATA_DIR / "youtube_token.json"
+LEGACY_TOKEN_FILE = DATA_DIR / "youtube_token.json"
+TOKEN_DPAPI_FILE = DATA_DIR / "youtube_token.dpapi"
+LEGACY_SECRETS_FILE = DATA_DIR / "client_secrets.json"
+SECRETS_DPAPI_FILE = DATA_DIR / "client_secrets.dpapi"
 CHANNEL_META_FILE = DATA_DIR / "youtube_channel.json"
 AUTOPILOT_FILE = DATA_DIR / "youtube_autopilot.json"
+
+_DPAPI_ENTROPY = b"ClipRushStudioPro_P0_DPAPI_Vault_v1"
+
+YOUTUBE_AUDIT_WARNING = (
+    "Projetos de API sem auditoria do Google enviam videos como PRIVADOS por padrao — "
+    "teste 1 video antes de agendar em lote."
+)
 
 _LOCK = threading.RLock()
 _OAUTH_STATE: dict[str, Any] = {
@@ -31,13 +54,149 @@ _OAUTH_STATE: dict[str, Any] = {
 _DAEMON_STARTED = False
 
 
+# ---- Windows DPAPI Native Vault Helpers ----
+
+def dpapi_available() -> bool:
+    return os.name == "nt" and win32crypt is not None
+
+
+def dpapi_encrypt_bytes(plaintext: bytes, label: str = "ClipRushVault") -> bytes:
+    if not dpapi_available():
+        raise XRayError(
+            "Cofre nativo do Windows (DPAPI / win32crypt) indisponivel neste ambiente.",
+            category="SEGURANCA",
+            status_code=500,
+        )
+    return win32crypt.CryptProtectData(plaintext, label, _DPAPI_ENTROPY, None, None, 0)
+
+
+def dpapi_decrypt_bytes(ciphertext: bytes) -> bytes:
+    if not dpapi_available():
+        raise XRayError(
+            "Cofre nativo do Windows (DPAPI / win32crypt) indisponivel para descriptografar credenciais.",
+            category="SEGURANCA",
+            status_code=500,
+        )
+    _, data = win32crypt.CryptUnprotectData(ciphertext, _DPAPI_ENTROPY, None, None, 0)
+    return bytes(data)
+
+
+def _atomic_write_bytes(path: Path, data: bytes) -> None:
+    tmp = path.with_suffix(f".{os.getpid()}.tmp")
+    tmp.write_bytes(data)
+    tmp.replace(path)
+
+
+def _save_protected_token(token_json_str: str) -> None:
+    enc = dpapi_encrypt_bytes(token_json_str.encode("utf-8"), label="ClipRushYouTubeToken")
+    _atomic_write_bytes(TOKEN_DPAPI_FILE, enc)
+    # Remove legacy plaintext token file once safely vaulted
+    if LEGACY_TOKEN_FILE.exists():
+        try:
+            LEGACY_TOKEN_FILE.unlink()
+        except OSError:
+            pass
+
+
+def _migrate_legacy_token_if_needed() -> bool:
+    """Transparently migrate legacy plaintext youtube_token.json -> DPAPI encrypted youtube_token.dpapi."""
+    if LEGACY_TOKEN_FILE.exists() and not TOKEN_DPAPI_FILE.exists():
+        try:
+            raw = LEGACY_TOKEN_FILE.read_text(encoding="utf-8")
+            json.loads(raw)  # Validate JSON
+            _save_protected_token(raw)
+            return True
+        except Exception:
+            return False
+    return False
+
+
+def _load_protected_token_json() -> Optional[dict[str, Any]]:
+    _migrate_legacy_token_if_needed()
+    if TOKEN_DPAPI_FILE.exists():
+        try:
+            plain = dpapi_decrypt_bytes(TOKEN_DPAPI_FILE.read_bytes())
+            return json.loads(plain.decode("utf-8"))
+        except Exception:
+            return None
+    return None
+
+
+def save_protected_client_secrets(raw_bytes: bytes) -> dict[str, Any]:
+    """Validate and encrypt client_secrets.json into Windows DPAPI vault (no plaintext left behind)."""
+    try:
+        parsed = json.loads(raw_bytes.decode("utf-8"))
+        if not isinstance(parsed, dict) or not ("installed" in parsed or "web" in parsed):
+            raise ValueError("JSON sem estrutura 'installed' ou 'web'.")
+    except Exception as exc:
+        raise XRayError(
+            "O JSON enviado nao parece um arquivo client_secrets.json valido do Google Cloud.",
+            category="YOUTUBE_AUTH",
+            technical_detail=str(exc),
+            status_code=400,
+        )
+
+    enc = dpapi_encrypt_bytes(raw_bytes, label="ClipRushYouTubeClientSecrets")
+    _atomic_write_bytes(SECRETS_DPAPI_FILE, enc)
+    if LEGACY_SECRETS_FILE.exists():
+        try:
+            LEGACY_SECRETS_FILE.unlink()
+        except OSError:
+            pass
+    save_settings({"youtube_client_secrets_path": str(SECRETS_DPAPI_FILE)})
+    return {"ok": True, "path": str(SECRETS_DPAPI_FILE), "vault": "Windows DPAPI"}
+
+
+def _migrate_legacy_secrets_if_needed() -> None:
+    if LEGACY_SECRETS_FILE.exists() and not SECRETS_DPAPI_FILE.exists():
+        try:
+            raw = LEGACY_SECRETS_FILE.read_bytes()
+            parsed = json.loads(raw.decode("utf-8"))
+            if isinstance(parsed, dict) and ("installed" in parsed or "web" in parsed):
+                enc = dpapi_encrypt_bytes(raw, label="ClipRushYouTubeClientSecrets")
+                _atomic_write_bytes(SECRETS_DPAPI_FILE, enc)
+                LEGACY_SECRETS_FILE.unlink()
+                save_settings({"youtube_client_secrets_path": str(SECRETS_DPAPI_FILE)})
+        except Exception:
+            pass
+
+
+def _load_client_secrets_dict() -> Optional[dict[str, Any]]:
+    _migrate_legacy_secrets_if_needed()
+    if SECRETS_DPAPI_FILE.exists():
+        try:
+            raw = dpapi_decrypt_bytes(SECRETS_DPAPI_FILE.read_bytes())
+            parsed = json.loads(raw.decode("utf-8"))
+            if isinstance(parsed, dict) and ("installed" in parsed or "web" in parsed):
+                return parsed
+        except Exception:
+            pass
+
+    custom = get_client_secrets_path()
+    if custom.exists() and custom.is_file() and custom.suffix.lower() == ".json":
+        try:
+            raw = custom.read_bytes()
+            parsed = json.loads(raw.decode("utf-8"))
+            if isinstance(parsed, dict) and ("installed" in parsed or "web" in parsed):
+                return parsed
+        except Exception:
+            pass
+    return None
+
+
+# ---- Autopilot Persistence & Account Safety ----
+
 def _read_autopilot() -> dict[str, Any]:
     with _LOCK:
-        default = {
+        settings = load_settings()
+        default: dict[str, Any] = {
             "enabled": False,
             "daily_time": "18:30",
-            "privacy_status": "public",  # public | unlisted | private
+            "privacy_status": "private",  # safe default for unverified Google Cloud API projects
+            "require_human_approval": bool(settings.get("youtube_require_human_approval", True)),
+            "daily_upload_limit": int(settings.get("youtube_daily_upload_limit", 2)),
             "last_publish_date": "",
+            "daily_uploads_log": {},
             "queue": [],
         }
         if not AUTOPILOT_FILE.exists():
@@ -48,34 +207,47 @@ def _read_autopilot() -> dict[str, Any]:
                 default.update(saved)
         except Exception:
             pass
+        default["daily_upload_limit"] = max(1, min(10, int(default.get("daily_upload_limit", 2))))
+        if not isinstance(default.get("daily_uploads_log"), dict):
+            default["daily_uploads_log"] = {}
         return default
 
 
 def _write_autopilot(data: dict[str, Any]) -> None:
     with _LOCK:
-        tmp = AUTOPILOT_FILE.with_suffix(".tmp")
-        tmp.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
+        raw = json.dumps(data, indent=2, ensure_ascii=False)
+        if AUTOPILOT_FILE.exists():
+            try:
+                shutil.copy2(AUTOPILOT_FILE, AUTOPILOT_FILE.with_suffix(".json.bak"))
+            except OSError:
+                pass
+        tmp = AUTOPILOT_FILE.with_suffix(f".{os.getpid()}.tmp")
+        tmp.write_text(raw, encoding="utf-8")
         tmp.replace(AUTOPILOT_FILE)
 
 
 def get_client_secrets_path() -> Path:
+    _migrate_legacy_secrets_if_needed()
+    if SECRETS_DPAPI_FILE.exists():
+        return SECRETS_DPAPI_FILE
     settings = load_settings()
     raw = (settings.get("youtube_client_secrets_path") or "").strip()
-    return Path(raw) if raw else (DATA_DIR / "client_secrets.json")
+    return Path(raw) if raw else LEGACY_SECRETS_FILE
 
 
 def _load_valid_credentials():
-    """Return valid Google OAuth2 Credentials, auto-refreshing if needed, or None."""
-    if not TOKEN_FILE.exists():
+    """Return valid Google OAuth2 Credentials decrypted from Windows DPAPI vault, auto-refreshing if needed."""
+    info = _load_protected_token_json()
+    if not info:
         return None
     try:
         from google.auth.transport.requests import Request
         from google.oauth2.credentials import Credentials
 
-        creds = Credentials.from_authorized_user_file(str(TOKEN_FILE), SCOPES)
+        creds = Credentials.from_authorized_user_info(info, SCOPES)
         if creds and creds.expired and creds.refresh_token:
             creds.refresh(Request())
-            TOKEN_FILE.write_text(creds.to_json(), encoding="utf-8")
+            _save_protected_token(creds.to_json())
         if creds and creds.valid:
             return creds
     except Exception:
@@ -104,7 +276,10 @@ def _fetch_channel_info(creds) -> dict[str, str]:
 
 
 def get_youtube_connection_status() -> dict[str, Any]:
+    _migrate_legacy_token_if_needed()
+    _migrate_legacy_secrets_if_needed()
     secrets_path = get_client_secrets_path()
+    secrets_ok = _load_client_secrets_dict() is not None
     creds = _load_valid_credentials()
     channel_title = ""
     channel_id = ""
@@ -126,39 +301,34 @@ def get_youtube_connection_status() -> dict[str, Any]:
         "channel_title": channel_title,
         "channel_id": channel_id,
         "client_secrets_path": str(secrets_path),
-        "client_secrets_exists": secrets_path.exists() and secrets_path.is_file(),
+        "client_secrets_exists": secrets_ok,
+        "vault_protected": dpapi_available(),
+        "vault_engine": "Windows DPAPI (CryptProtectData)" if dpapi_available() else "Indisponivel",
+        "audit_warning": YOUTUBE_AUDIT_WARNING,
         "oauth_in_progress": bool(_OAUTH_STATE["in_progress"]),
         "last_error": _OAUTH_STATE["last_error"],
     }
 
 
 def start_oauth_flow(custom_secrets_path: Optional[str] = None) -> dict[str, Any]:
-    """Start local OAuth2 InstalledAppFlow in a background thread so the browser opens for login."""
+    """Start local OAuth2 InstalledAppFlow in a background thread using DPAPI-protected credentials."""
     if custom_secrets_path and custom_secrets_path.strip():
-        save_settings({"youtube_client_secrets_path": custom_secrets_path.strip().strip('"')})
+        p = Path(custom_secrets_path.strip().strip('"'))
+        if p.exists() and p.is_file() and p.suffix.lower() == ".json":
+            save_protected_client_secrets(p.read_bytes())
+        else:
+            save_settings({"youtube_client_secrets_path": str(p)})
 
-    secrets_path = get_client_secrets_path()
-    if not secrets_path.exists() or not secrets_path.is_file():
+    client_config = _load_client_secrets_dict()
+    if not client_config:
         return {
             "started": False,
             "needs_secrets": True,
-            "client_secrets_path": str(secrets_path),
+            "client_secrets_path": str(get_client_secrets_path()),
             "console_url": "https://console.cloud.google.com/apis/credentials",
+            "audit_warning": YOUTUBE_AUDIT_WARNING,
             "message": "Arquivo client_secrets.json ainda nao configurado. Siga o assistente guiado para conectar sua conta YouTube.",
         }
-
-    # Validate basic JSON structure before starting flow
-    try:
-        parsed = json.loads(secrets_path.read_text(encoding="utf-8"))
-        if not isinstance(parsed, dict) or not ("installed" in parsed or "web" in parsed):
-            raise ValueError("JSON nao contem chave 'installed' ou 'web'.")
-    except Exception as exc:
-        raise XRayError(
-            "O arquivo client_secrets.json selecionado e invalido. Baixe o JSON oficial de credenciais OAuth 2.0 (Aplicativo para Computador) no Google Cloud Console.",
-            category="YOUTUBE_AUTH",
-            technical_detail=str(exc),
-            status_code=400,
-        )
 
     if _OAUTH_STATE["in_progress"]:
         return {"started": True, "message": "Autenticacao OAuth2 ja esta aberta no navegador."}
@@ -170,13 +340,13 @@ def start_oauth_flow(custom_secrets_path: Optional[str] = None) -> dict[str, Any
         try:
             from google_auth_oauthlib.flow import InstalledAppFlow
 
-            flow = InstalledAppFlow.from_client_secrets_file(str(secrets_path), SCOPES)
+            flow = InstalledAppFlow.from_client_config(client_config, SCOPES)
             creds = flow.run_local_server(
                 port=0,
                 open_browser=True,
-                success_message="Conta YouTube conectada com sucesso ao ClipRush Studio Pro! Voce ja pode fechar esta aba.",
+                success_message="Conta YouTube conectada com seguranca (DPAPI) ao ClipRush Studio Pro! Voce ja pode fechar esta aba.",
             )
-            TOKEN_FILE.write_text(creds.to_json(), encoding="utf-8")
+            _save_protected_token(creds.to_json())
             _fetch_channel_info(creds)
             _OAUTH_STATE["last_error"] = ""
         except Exception as exc:
@@ -187,19 +357,20 @@ def start_oauth_flow(custom_secrets_path: Optional[str] = None) -> dict[str, Any
     threading.Thread(target=_run, daemon=True).start()
     return {
         "started": True,
-        "message": "Navegador aberto para autorizar sua conta Google/YouTube via OAuth2 local.",
+        "audit_warning": YOUTUBE_AUDIT_WARNING,
+        "message": "Navegador aberto para autorizar sua conta Google/YouTube via OAuth2 local (token protegido com Windows DPAPI).",
     }
 
 
 def disconnect_youtube() -> dict[str, Any]:
-    for fp in (TOKEN_FILE, CHANNEL_META_FILE):
+    for fp in (TOKEN_DPAPI_FILE, LEGACY_TOKEN_FILE, CHANNEL_META_FILE):
         if fp.exists():
             try:
                 fp.unlink()
             except OSError:
                 pass
     _OAUTH_STATE["last_error"] = ""
-    return {"connected": False, "message": "Conta YouTube desconectada com sucesso."}
+    return {"connected": False, "message": "Conta YouTube desconectada e tokens DPAPI removidos com sucesso."}
 
 
 def upload_youtube_short(
@@ -207,7 +378,7 @@ def upload_youtube_short(
     title: str,
     description: str = "",
     hashtags: Optional[list[str]] = None,
-    privacy_status: str = "public",
+    privacy_status: str = "private",
 ) -> dict[str, Any]:
     """Upload an MP4 clip as a YouTube Short via official YouTube Data API v3."""
     p = Path(file_path)
@@ -251,7 +422,7 @@ def upload_youtube_short(
         api_tags.append("Shorts")
 
     if privacy_status not in ("public", "unlisted", "private"):
-        privacy_status = "public"
+        privacy_status = "private"
 
     body = {
         "snippet": {
@@ -290,11 +461,15 @@ def upload_youtube_short(
         )
 
 
-# ---- Daily Autopilot Queue & Background Scheduler ----
+# ---- Protected Daily Autopilot Queue & Background Scheduler ----
+
+def _uploads_today(state: dict[str, Any]) -> int:
+    today_str = datetime.now().strftime("%Y-%m-%d")
+    return int((state.get("daily_uploads_log") or {}).get(today_str, 0))
+
 
 def get_autopilot_state() -> dict[str, Any]:
     state = _read_autopilot()
-    # Compute estimated publish date/time for each pending 'agendado' item
     now = datetime.now()
     daily_time = state.get("daily_time", "18:30")
     try:
@@ -303,20 +478,24 @@ def get_autopilot_state() -> dict[str, Any]:
         hh, mm = 18, 30
 
     today_str = now.strftime("%Y-%m-%d")
-    already_published_today = state.get("last_publish_date") == today_str
+    uploads_today = _uploads_today(state)
+    daily_limit = int(state.get("daily_upload_limit", 2))
     next_slot = now.replace(hour=hh, minute=mm, second=0, microsecond=0)
-    if already_published_today or now >= next_slot:
+    if uploads_today >= daily_limit or state.get("last_publish_date") == today_str or now >= next_slot:
         next_slot = next_slot + timedelta(days=1)
 
     day_offset = 0
     for item in state.get("queue", []):
-        if item.get("status") == "agendado":
+        if item.get("status") in ("agendado", "aguardando_aprovacao"):
             est = next_slot + timedelta(days=day_offset)
             item["estimated_publish_at"] = est.strftime("%Y-%m-%d %H:%M")
             day_offset += 1
         else:
             item["estimated_publish_at"] = item.get("published_at") or ""
 
+    state["uploads_today"] = uploads_today
+    state["daily_remaining"] = max(0, daily_limit - uploads_today)
+    state["audit_warning"] = YOUTUBE_AUDIT_WARNING
     state["youtube_status"] = get_youtube_connection_status()
     return state
 
@@ -325,12 +504,13 @@ def update_autopilot_config(
     enabled: Optional[bool] = None,
     daily_time: Optional[str] = None,
     privacy_status: Optional[str] = None,
+    require_human_approval: Optional[bool] = None,
+    daily_upload_limit: Optional[int] = None,
 ) -> dict[str, Any]:
     state = _read_autopilot()
     if enabled is not None:
         state["enabled"] = bool(enabled)
     if daily_time is not None:
-        # Validate HH:MM
         parts = daily_time.strip().split(":")
         if len(parts) == 2 and parts[0].isdigit() and parts[1].isdigit():
             h = max(0, min(23, int(parts[0])))
@@ -338,6 +518,13 @@ def update_autopilot_config(
             state["daily_time"] = f"{h:02d}:{m:02d}"
     if privacy_status in ("public", "unlisted", "private"):
         state["privacy_status"] = privacy_status
+    if require_human_approval is not None:
+        state["require_human_approval"] = bool(require_human_approval)
+        save_settings({"youtube_require_human_approval": bool(require_human_approval)})
+    if daily_upload_limit is not None:
+        lim = max(1, min(10, int(daily_upload_limit)))
+        state["daily_upload_limit"] = lim
+        save_settings({"youtube_daily_upload_limit": lim})
     _write_autopilot(state)
     return get_autopilot_state()
 
@@ -346,6 +533,7 @@ def enqueue_autopilot_clips(clips: list[dict[str, Any]]) -> dict[str, Any]:
     state = _read_autopilot()
     queue = state.get("queue", [])
     existing_clip_ids = {q.get("clip_id") for q in queue if q.get("clip_id")}
+    require_approval = bool(state.get("require_human_approval", True))
     added = 0
     now_iso = datetime.now(timezone.utc).isoformat()
     for c in clips:
@@ -362,7 +550,9 @@ def enqueue_autopilot_clips(clips: list[dict[str, Any]]) -> dict[str, Any]:
                 "description": c.get("description") or "",
                 "hashtags": c.get("hashtags") or ["#Shorts"],
                 "file_path": c.get("file_path"),
-                "status": "agendado",  # agendado | publicando | publicado | erro
+                "status": "aguardando_aprovacao" if require_approval else "agendado",
+                "approved": not require_approval,
+                "approved_at": "" if require_approval else now_iso,
                 "video_url": "",
                 "video_id": "",
                 "error_message": "",
@@ -380,6 +570,29 @@ def enqueue_autopilot_clips(clips: list[dict[str, Any]]) -> dict[str, Any]:
     return out
 
 
+def approve_autopilot_item(item_id: str, approved: bool = True) -> dict[str, Any]:
+    """Explicit human approval gate before any queued video is allowed to upload."""
+    state = _read_autopilot()
+    found = False
+    for q in state.get("queue", []):
+        if q.get("id") == item_id:
+            found = True
+            q["approved"] = bool(approved)
+            if approved:
+                q["approved_at"] = datetime.now(timezone.utc).isoformat()
+                if q.get("status") == "aguardando_aprovacao":
+                    q["status"] = "agendado"
+            else:
+                q["approved_at"] = ""
+                if q.get("status") == "agendado":
+                    q["status"] = "aguardando_aprovacao"
+            break
+    if not found:
+        raise XRayError("Clipe nao encontrado na fila do YouTube para aprovacao.", category="YOUTUBE_UPLOAD", status_code=404)
+    _write_autopilot(state)
+    return get_autopilot_state()
+
+
 def remove_autopilot_item(item_id: str) -> dict[str, Any]:
     state = _read_autopilot()
     state["queue"] = [q for q in state.get("queue", []) if q.get("id") != item_id]
@@ -387,12 +600,41 @@ def remove_autopilot_item(item_id: str) -> dict[str, Any]:
     return get_autopilot_state()
 
 
-def publish_autopilot_item(item_id: str, mark_daily_slot: bool = False) -> dict[str, Any]:
-    """Upload a specific queued item via official YouTube API v3 and update its status/link."""
+def publish_autopilot_item(
+    item_id: str,
+    mark_daily_slot: bool = False,
+    human_approved: bool = False,
+) -> dict[str, Any]:
+    """Upload a specific queued item via official YouTube API v3 with human approval & daily cap enforcement."""
     state = _read_autopilot()
     target = next((q for q in state.get("queue", []) if q.get("id") == item_id), None)
     if not target:
         raise XRayError("Clipe nao encontrado na fila do Piloto Automatico YouTube.", category="YOUTUBE_UPLOAD", status_code=404)
+
+    # 1. Enforce mandatory human approval when active
+    require_approval = bool(state.get("require_human_approval", True))
+    if require_approval and not (target.get("approved") or human_approved):
+        raise XRayError(
+            "Aprovacao humana obrigatoria ativa para proteger sua conta YouTube. "
+            "Clique em 'Aprovar para Publicacao' antes de enviar este video.",
+            category="YOUTUBE_PROTECTION",
+            status_code=403,
+        )
+
+    # 2. Enforce daily upload limit (default: 2 uploads/day)
+    daily_limit = int(state.get("daily_upload_limit", 2))
+    uploads_today = _uploads_today(state)
+    if uploads_today >= daily_limit:
+        raise XRayError(
+            f"Limite diario de protecao da conta atingido ({uploads_today}/{daily_limit} uploads hoje). "
+            "Aguarde amanha ou ajuste o limite em Seguranca/Agendador.",
+            category="YOUTUBE_PROTECTION",
+            status_code=429,
+        )
+
+    if human_approved and not target.get("approved"):
+        target["approved"] = True
+        target["approved_at"] = datetime.now(timezone.utc).isoformat()
 
     target["status"] = "publicando"
     target["error_message"] = ""
@@ -404,9 +646,12 @@ def publish_autopilot_item(item_id: str, mark_daily_slot: bool = False) -> dict[
             title=target["title"],
             description=target.get("description", ""),
             hashtags=target.get("hashtags", []),
-            privacy_status=state.get("privacy_status", "public"),
+            privacy_status=state.get("privacy_status", "private"),
         )
         state = _read_autopilot()
+        today_str = datetime.now().strftime("%Y-%m-%d")
+        log = state.setdefault("daily_uploads_log", {})
+        log[today_str] = int(log.get(today_str, 0)) + 1
         for q in state.get("queue", []):
             if q.get("id") == item_id:
                 q["status"] = "publicado"
@@ -416,7 +661,7 @@ def publish_autopilot_item(item_id: str, mark_daily_slot: bool = False) -> dict[
                 q["error_message"] = ""
                 break
         if mark_daily_slot:
-            state["last_publish_date"] = datetime.now().strftime("%Y-%m-%d")
+            state["last_publish_date"] = today_str
         _write_autopilot(state)
         return {"ok": True, "result": res, "state": get_autopilot_state()}
     except Exception as exc:
@@ -432,7 +677,7 @@ def publish_autopilot_item(item_id: str, mark_daily_slot: bool = False) -> dict[
 
 
 def start_autopilot_daemon() -> None:
-    """Start background scheduler thread that publishes 1 fresh YouTube Short per day at daily_time."""
+    """Start background scheduler thread respecting human approval & daily upload limit."""
     global _DAEMON_STARTED
     if _DAEMON_STARTED:
         return
@@ -447,16 +692,27 @@ def start_autopilot_daemon() -> None:
                     today_str = now.strftime("%Y-%m-%d")
                     daily_time = state.get("daily_time", "18:30")
                     now_hm = now.strftime("%H:%M")
-                    if state.get("last_publish_date") != today_str and now_hm >= daily_time:
+                    daily_limit = int(state.get("daily_upload_limit", 2))
+                    uploads_today = _uploads_today(state)
+                    require_approval = bool(state.get("require_human_approval", True))
+                    if (
+                        state.get("last_publish_date") != today_str
+                        and uploads_today < daily_limit
+                        and now_hm >= daily_time
+                    ):
                         next_item = next(
-                            (q for q in state.get("queue", []) if q.get("status") == "agendado"),
+                            (
+                                q
+                                for q in state.get("queue", [])
+                                if q.get("status") == "agendado"
+                                and (not require_approval or bool(q.get("approved")))
+                            ),
                             None,
                         )
                         if next_item and _load_valid_credentials() is not None:
                             try:
                                 publish_autopilot_item(next_item["id"], mark_daily_slot=True)
                             except Exception:
-                                # Error is already recorded on item['status']='erro' & item['error_message']
                                 pass
             except Exception:
                 pass

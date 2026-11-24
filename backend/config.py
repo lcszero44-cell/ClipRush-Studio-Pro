@@ -17,6 +17,7 @@ TEMP_DIR = DATA_DIR / "temp"
 THUMBS_DIR = DATA_DIR / "thumbs"
 OUTPUT_DIR = BASE_DIR / "saida"
 SETTINGS_FILE = DATA_DIR / "settings.json"
+CONFIG_FILE = DATA_DIR / "config.json"
 
 PREFERRED_FFMPEG_BIN = Path(r"D:\ClipRush_Universal\ffmpeg-9.0.2-full_build\bin")
 
@@ -24,15 +25,22 @@ for _dir in (ASSETS_DIR, DATA_DIR, UPLOADS_DIR, TEMP_DIR, THUMBS_DIR, OUTPUT_DIR
     _dir.mkdir(parents=True, exist_ok=True)
 
 
+def _safe_exists(p: Path) -> bool:
+    try:
+        return p.exists()
+    except OSError:
+        return False
+
+
 def discover_ffmpeg() -> dict[str, Any]:
     """Locate ffmpeg and ffprobe, prioritizing D:\\ClipRush_Universal\\ffmpeg-9.0.2-full_build\\bin."""
     preferred_ffmpeg = PREFERRED_FFMPEG_BIN / "ffmpeg.exe"
     preferred_ffprobe = PREFERRED_FFMPEG_BIN / "ffprobe.exe"
-    if preferred_ffmpeg.exists():
+    if _safe_exists(preferred_ffmpeg):
         return {
             "ok": True,
             "ffmpeg": str(preferred_ffmpeg),
-            "ffprobe": str(preferred_ffprobe) if preferred_ffprobe.exists() else (shutil.which("ffprobe") or "ffprobe"),
+            "ffprobe": str(preferred_ffprobe) if _safe_exists(preferred_ffprobe) else (shutil.which("ffprobe") or "ffprobe"),
             "source": "ClipRush_Universal",
         }
     which_ffmpeg = shutil.which("ffmpeg")
@@ -59,10 +67,40 @@ DEFAULT_SETTINGS: dict[str, Any] = {
     "ffmpeg_path": "",
     "output_dir": str(OUTPUT_DIR),
     "whisper_model": "base",
-    "whisper_language": "pt",
+    "whisper_language": "auto",  # auto detects PT/EN seamlessly
+    "subtitles_default_on": True,
     "hardware_encoder": "auto",  # auto | libx264 | h264_nvenc
-    "default_clip_min_sec": 12,
-    "default_clip_max_sec": 45,
+    "default_clip_min_sec": 25,
+    "default_clip_max_sec": 55,
+    "default_clip_target_sec": 38,
+    # Multi-Platform & TikTok Monetizable (61-90s) configurable limits
+    "tiktok_short_min_sec": 20,
+    "tiktok_short_max_sec": 32,
+    "tiktok_long_min_sec": 61,
+    "tiktok_long_max_sec": 90,
+    "tiktok_long_target_sec": 75,
+    "youtube_shorts_min_sec": 36,
+    "youtube_shorts_max_sec": 55,
+    # P0 Peak Hook (1.5-2.0s) + Top Hook Text (2.0-2.5s) + Precision Zoom (1.12x-1.15x)
+    "peak_hook_duration_sec": 1.8,
+    "hook_text_duration_sec": 2.3,
+    "impact_zoom_intensity": 1.14,
+    "zoom_min_interval_sec": 6.0,
+    "zoom_max_per_clip": 3,
+    # P0 Ryzen 5 2500U lightweight 2-stage analysis & CPU protection
+    "analysis_detailed_mode": False,
+    "cpu_pause_threshold_pct": 80,
+    "ollama_keep_alive": "30s",
+    "ollama_timeout_sec": 60,
+    # P0 YouTube Account Protection
+    "youtube_require_human_approval": True,
+    "youtube_daily_upload_limit": 2,
+    # P1 Theme, Trending Tags, Watch Folder & Scene Mode
+    "theme": "dark",  # dark | light | auto
+    "scene_mode": "keep_dialogue",  # keep_dialogue | prioritize_gameplay | ignore_cutscenes
+    "trending_hashtags": ["#GameplayBR", "#PS4Clips", "#GamerBrasil"],
+    "watch_folder_enabled": False,
+    "watch_folder_path": r"E:\PS4\SHARE\Video Clips",
     "sensitivity": 0.55,
     "enable_impact_zoom": True,
     "enable_hook_banner": True,
@@ -74,24 +112,59 @@ DEFAULT_SETTINGS: dict[str, Any] = {
     "enable_progress_bar": True,
     "enable_audio_norm": True,
     "enable_action_tracking": True,
+    "enable_slowmo": True,
     "youtube_client_secrets_path": str(DATA_DIR / "client_secrets.json"),
     "port": 8765,
 }
 
 
+def _atomic_write_config(path: Path, data: dict[str, Any]) -> None:
+    raw = json.dumps(data, indent=2, ensure_ascii=False)
+    if path.exists():
+        try:
+            shutil.copy2(path, path.with_suffix(path.suffix + ".bak"))
+        except OSError:
+            pass
+    tmp = path.with_suffix(f".{os.getpid()}.tmp")
+    tmp.write_text(raw, encoding="utf-8")
+    tmp.replace(path)
+
+
 def load_settings() -> dict[str, Any]:
     settings = dict(DEFAULT_SETTINGS)
-    if SETTINGS_FILE.exists():
-        try:
-            saved = json.loads(SETTINGS_FILE.read_text(encoding="utf-8"))
-            if isinstance(saved, dict):
-                settings.update(saved)
-        except Exception:
-            pass
+    # Load settings.json first, then overlay config.json if user edited config.json directly
+    for cfg_path in (SETTINGS_FILE, CONFIG_FILE):
+        if cfg_path.exists():
+            try:
+                saved = json.loads(cfg_path.read_text(encoding="utf-8"))
+                if isinstance(saved, dict):
+                    if (saved.get("default_clip_min_sec"), saved.get("default_clip_max_sec")) in ((12, 45), (22, 38)):
+                        saved["default_clip_min_sec"] = 25
+                        saved["default_clip_max_sec"] = 55
+                        saved["default_clip_target_sec"] = 38
+                    settings.update(saved)
+            except Exception:
+                pass
+    # Clamp critical P0 safety ranges
+    settings["tiktok_long_min_sec"] = max(61, min(85, int(settings.get("tiktok_long_min_sec", 61))))
+    settings["tiktok_long_max_sec"] = max(settings["tiktok_long_min_sec"] + 5, min(120, int(settings.get("tiktok_long_max_sec", 90))))
+    settings["peak_hook_duration_sec"] = round(max(1.5, min(2.0, float(settings.get("peak_hook_duration_sec", 1.8)))), 2)
+    settings["hook_text_duration_sec"] = round(max(2.0, min(2.5, float(settings.get("hook_text_duration_sec", 2.3)))), 2)
+    settings["impact_zoom_intensity"] = round(max(1.06, min(1.25, float(settings.get("impact_zoom_intensity", 1.14)))), 2)
+    settings["zoom_min_interval_sec"] = round(max(6.0, float(settings.get("zoom_min_interval_sec", 6.0))), 2)
+    settings["zoom_max_per_clip"] = max(1, min(3, int(settings.get("zoom_max_per_clip", 3))))
+    settings["cpu_pause_threshold_pct"] = max(65, min(95, int(settings.get("cpu_pause_threshold_pct", 80))))
+    settings["youtube_daily_upload_limit"] = max(1, min(10, int(settings.get("youtube_daily_upload_limit", 2))))
+
     if not settings.get("ffmpeg_path"):
         ff = discover_ffmpeg()
         if ff["ok"]:
             settings["ffmpeg_path"] = ff["ffmpeg"]
+    if not CONFIG_FILE.exists():
+        try:
+            _atomic_write_config(CONFIG_FILE, settings)
+        except OSError:
+            pass
     return settings
 
 
@@ -102,17 +175,18 @@ def save_settings(updates: dict[str, Any]) -> dict[str, Any]:
             current[key] = val
     out_dir = Path(current.get("output_dir") or str(OUTPUT_DIR))
     out_dir.mkdir(parents=True, exist_ok=True)
-    SETTINGS_FILE.write_text(json.dumps(current, indent=2, ensure_ascii=False), encoding="utf-8")
-    return current
+    _atomic_write_config(SETTINGS_FILE, current)
+    _atomic_write_config(CONFIG_FILE, current)
+    return load_settings()
 
 
 def get_ffmpeg_bins() -> tuple[str, str]:
     settings = load_settings()
     custom_ff = settings.get("ffmpeg_path", "").strip()
-    if custom_ff and Path(custom_ff).exists():
+    if custom_ff and _safe_exists(Path(custom_ff)):
         ff_path = Path(custom_ff)
         probe_candidate = ff_path.parent / "ffprobe.exe"
-        return str(ff_path), str(probe_candidate) if probe_candidate.exists() else (shutil.which("ffprobe") or "ffprobe")
+        return str(ff_path), str(probe_candidate) if _safe_exists(probe_candidate) else (shutil.which("ffprobe") or "ffprobe")
     discovered = discover_ffmpeg()
     return discovered["ffmpeg"], discovered["ffprobe"]
 
@@ -141,11 +215,11 @@ GAME_PROFILES: dict[str, dict[str, Any]] = {
             "red_flash": 0.12,
             "death_signal": 0.06,
         },
-        "pre_pad": 5.5,
-        "post_pad": 4.5,
-        "death_pre_pad": 8.0,
-        "death_post_pad": 5.5,
-        "min_gap": 10.0,
+        "pre_pad": 8.0,
+        "post_pad": 7.0,
+        "death_pre_pad": 9.0,
+        "death_post_pad": 8.0,
+        "min_gap": 24.0,
         "hashtags": ["#SniperElite", "#Headshot", "#RaioX", "#PS4Gameplay", "#GamingBrasil", "#Shorts"],
         "vision_focus": "tiros de sniper a longa distancia, camera de raio-X mostrando ossos/orgaos, explosoes de veiculos, headshots e mortes furtivas",
     },
@@ -164,11 +238,11 @@ GAME_PROFILES: dict[str, dict[str, Any]] = {
             "red_flash": 0.06,
             "death_signal": 0.06,
         },
-        "pre_pad": 4.5,
-        "post_pad": 4.0,
-        "death_pre_pad": 7.0,
-        "death_post_pad": 5.0,
-        "min_gap": 9.0,
+        "pre_pad": 8.0,
+        "post_pad": 7.0,
+        "death_pre_pad": 9.0,
+        "death_post_pad": 8.0,
+        "min_gap": 24.0,
         "hashtags": ["#SpiderManPS4", "#HomemAranha", "#MarvelsSpiderMan", "#PS4", "#Combos", "#GamingBR"],
         "vision_focus": "balancos em alta velocidade pela cidade, combos aereos, finalizacoes acrobaticas, lutas contra viloes e cenas cinematograficas",
     },
@@ -187,11 +261,11 @@ GAME_PROFILES: dict[str, dict[str, Any]] = {
             "red_flash": 0.10,
             "death_signal": 0.12,
         },
-        "pre_pad": 6.0,
-        "post_pad": 4.5,
-        "death_pre_pad": 8.5,
-        "death_post_pad": 6.0,
-        "min_gap": 11.0,
+        "pre_pad": 8.0,
+        "post_pad": 7.0,
+        "death_pre_pad": 9.5,
+        "death_post_pad": 8.0,
+        "min_gap": 24.0,
         "hashtags": ["#RedDeadRedemption2", "#RDR2", "#ArthurMorgan", "#DeadEye", "#PS4Gameplay", "#Shorts"],
         "vision_focus": "duelos de velho oeste, modo Dead Eye com filtro ambar/sepia, tiroteios intensos, eventos aleatorios de mundo aberto e quedas ou mortes engracadas/brutais",
     },
@@ -210,11 +284,11 @@ GAME_PROFILES: dict[str, dict[str, Any]] = {
             "red_flash": 0.14,
             "death_signal": 0.16,
         },
-        "pre_pad": 6.0,
-        "post_pad": 5.0,
-        "death_pre_pad": 9.0,
-        "death_post_pad": 7.0,
-        "min_gap": 10.0,
+        "pre_pad": 8.0,
+        "post_pad": 7.5,
+        "death_pre_pad": 9.5,
+        "death_post_pad": 8.5,
+        "min_gap": 24.0,
         "hashtags": ["#ResidentEvil", "#RE4Remake", "#Terror", "#SurvivalHorror", "#JumpScare", "#PS4Gameplay"],
         "vision_focus": "sustos repentinos (jump scares), encontros com monstros ou chefes, tensao de pouca vida, ataques de serra eletrica, agarramentos e mortes cinematograficas com tela Voce Morreu / Game Over",
     },
@@ -233,11 +307,11 @@ GAME_PROFILES: dict[str, dict[str, Any]] = {
             "red_flash": 0.10,
             "death_signal": 0.08,
         },
-        "pre_pad": 5.0,
-        "post_pad": 4.5,
-        "death_pre_pad": 8.0,
-        "death_post_pad": 5.5,
-        "min_gap": 10.0,
+        "pre_pad": 8.0,
+        "post_pad": 7.0,
+        "death_pre_pad": 9.0,
+        "death_post_pad": 8.0,
+        "min_gap": 24.0,
         "hashtags": ["#GodOfWar", "#Kratos", "#PS4Gameplay", "#BossFight", "#R3Execution", "#GamingBR"],
         "vision_focus": "execucoes brutais com botao R3, ativacao da Furia Espartana com brilho vermelho/fogo, combos com Machado Leviata ou Laminas do Caos e lutas epicas contra Valkyrias ou chefes",
     },
@@ -256,11 +330,11 @@ GAME_PROFILES: dict[str, dict[str, Any]] = {
             "red_flash": 0.10,
             "death_signal": 0.08,
         },
-        "pre_pad": 5.0,
-        "post_pad": 4.5,
-        "death_pre_pad": 8.0,
-        "death_post_pad": 6.0,
-        "min_gap": 10.0,
+        "pre_pad": 8.0,
+        "post_pad": 7.0,
+        "death_pre_pad": 9.0,
+        "death_post_pad": 8.0,
+        "min_gap": 24.0,
         "hashtags": ["#GameplayPS4", "#GamingBrasil", "#MelhoresMomentos", "#ClipesDeJogos", "#Shorts", "#TikTokGaming"],
         "vision_focus": "combate intenso, explosoes, combos, chefes, sustos, jogadas epicas e mortes cinematograficas ou engracadas com tela de Game Over",
     },

@@ -38,15 +38,15 @@
         </button>
       </nav>
 
-      <!-- Status Chips & Output Folder -->
+      <!-- Status Chips, Theme Toggle, Problems Chip & Output Folder -->
       <div class="header-right">
         <button id="chip-system" class="status-chip ok"
-          data-tooltip="Servidor local FastAPI ativo em 127.0.0.1:8765. Clique para atualizar status.">
+          data-tooltip="Abre o painel Saude do Sistema (FFmpeg, Ollama, Disco, RAM e Bateria/Carregador).">
           <span class="status-dot"></span>
-          <span>Sistema OK</span>
+          <span>Saude OK</span>
         </button>
-        <button id="chip-ollama" class="status-chip warn"
-          data-tooltip="Status da IA Qwen 3.5 9B (Ollama). Clique para iniciar ou reconectar o Ollama.">
+        <button id="chip-ollama" class="status-chip warn" data-qwen-state="offline"
+          data-tooltip="Indicador Qwen 5 Estados (Conectado c/ visao, Carregando modelo, Analisando corte #N, Desligado, Sem visao). Clique para iniciar/reconectar.">
           <span class="status-dot"></span>
           <span id="chip-ollama-label">Qwen 3.5 ...</span>
         </button>
@@ -55,10 +55,22 @@
           <span class="status-dot"></span>
           <span id="chip-ffmpeg-label">FFmpeg OK</span>
         </button>
+        <button id="chip-problems" class="status-chip"
+          data-tooltip="Abre a Gaveta de Problemas com causa provavel, solucao, codigo estavel e logs.">
+          <span id="chip-problems-label">● 0 problemas</span>
+        </button>
+        <button id="btn-theme-toggle" class="btn btn-sm"
+          data-tooltip="Alterna tema: Escuro, Claro (Alto Contraste AA) ou Automatico (segue o Windows).">
+          <span id="theme-toggle-label">🌙 Escuro</span>
+        </button>
+        <button id="btn-open-guide" class="btn btn-sm"
+          data-tooltip="Abre o Guia Pode / Nao Pode e permite rever o Tour rapido de 3 passos.">
+          <span>Guia</span>
+        </button>
         <button id="btn-open-output" class="btn btn-sm btn-cyan"
           data-tooltip="Abre no Windows Explorer a pasta onde todos os videos renderizados sao salvos.">
           <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
-          <span>Abrir Pasta Saida</span>
+          <span>Saida</span>
         </button>
       </div>
     </header>
@@ -81,16 +93,28 @@
           </button>
 
           <button class="nav-item" data-view="agendador"
-            data-tooltip="Organize a fila de postagens para YouTube Shorts, TikTok e Instagram Reels.">
+            data-tooltip="Organize a fila de postagens, Agenda Inteligente 1-3/dia, Teste A/B e Metas de Monetizacao.">
             <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
-            <span>Agendador &amp; Publicacao</span>
+            <span>Agendador &amp; Metas</span>
             <span id="nav-sched-count" class="nav-count">0</span>
           </button>
 
+          <button class="nav-item" data-view="desempenho"
+            data-tooltip="Registre metricas, importe CSV do TikTok Studio ou sincronize YouTube Analytics para o ranking aprender com seu canal.">
+            <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>
+            <span>Desempenho</span>
+          </button>
+
           <button class="nav-item" data-view="limpeza"
-            data-tooltip="Verifique espaco ocupado por arquivos temporarios e libere disco com seguranca.">
+            data-tooltip="Gestor de Armazenamento por projeto, alerta de disco <10 GB e Backup/Restauracao .zip.">
             <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/></svg>
-            <span>Limpeza de Disco</span>
+            <span>Armazenamento &amp; Backup</span>
+          </button>
+
+          <button class="nav-item" data-view="diagnostico"
+            data-tooltip="Versao atual, Novidades (changelog), status de hardware e Autoteste Sintetico ponta a ponta.">
+            <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+            <span>Diagnostico</span>
           </button>
 
           <button class="nav-item" data-view="configuracoes"
@@ -111,6 +135,39 @@
 
       <!-- Main Workspace -->
       <main class="app-main">
+        <!-- Discrete Red Inline Error Bar (Never crashes UI) -->
+        <div id="inline-error-strip" class="inline-error-bar hidden" style="max-width:1340px;margin:0 auto 14px;">
+          <span id="inline-error-text" style="flex:1;"></span>
+          <div class="flex gap-2">
+            <button id="btn-inline-error-details" class="btn btn-sm btn-danger"><span>Ver Detalhes</span></button>
+            <button id="btn-inline-error-dismiss" class="btn btn-sm"><span>×</span></button>
+          </div>
+        </div>
+
+        <!-- Global Alive Progress Panel (visible across all tabs while any isolated job runs) -->
+        <div id="global-live-progress" class="progress-box hidden" style="max-width:1340px;margin:0 auto 18px;">
+          <div class="flex items-center justify-between flex-wrap gap-3">
+            <div class="flex items-center gap-2">
+              <span class="live-pulse-dot"></span>
+              <strong id="global-progress-msg" style="color:#fff;font-size:14px;">Etapa 1/4: Iniciando processamento...</strong>
+            </div>
+            <div class="flex items-center gap-2">
+              <span id="global-progress-timer" class="badge badge-purple"
+                data-tooltip="Tempo decorrido do processamento atual.">00:00</span>
+              <span id="global-progress-pct" class="badge badge-cyan">0%</span>
+              <button id="btn-cancel-job" class="btn btn-sm btn-danger"
+                data-tooltip="Interrompe imediatamente a analise ou renderizacao em andamento sem travar o programa.">
+                <span>Cancelar Processamento</span>
+              </button>
+            </div>
+          </div>
+          <div class="progress-track"><div id="global-progress-fill" class="progress-fill"></div></div>
+          <div class="live-reassurance">
+            <span class="live-pulse-dot"></span>
+            <span>Processamento ativo no seu PC — nao feche esta janela, os clipes vao aparecer automaticamente.</span>
+          </div>
+        </div>
+
         <!-- ================= VIEW 1: NOVO PROJETO (3-STEP STUDIO) ================= -->
         <section id="view-novo-projeto" class="view-section active">
 
@@ -122,13 +179,17 @@
                 <p class="section-sub">Arraste sua gravacao de PS4/PS5 ou informe o caminho local sem duplicar arquivos gigantes.</p>
               </div>
               <div class="flex flex-wrap gap-2">
-                <button id="btn-auto-mode-step1" class="btn btn-auto-magic"
-                  data-tooltip="Executa tudo sozinho em 1 clique: Analise Multimodal -> Visao Qwen 3.5 -> Renderiza Top 5 -> Gera Kit Viral -> Abre Biblioteca pronta.">
+                <button id="btn-auto-next10-step1" class="btn btn-auto-magic"
+                  data-tooltip="Escaneia 100% do video, pula trechos ja cortados antes e gera os proximos 10 clipes 100% ineditos automaticamente.">
                   <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
-                  <span>Modo Automatico (Analisar + Gerar Top 5 Agora)</span>
+                  <span>Gerar Proximos 10 Clipes Ineditos</span>
+                </button>
+                <button id="btn-auto-all-step1" class="btn btn-success"
+                  data-tooltip="Extrai TODOS os 15, 20 ou 30+ momentos epicos ineditos encontrados de ponta a ponta do video em um unico lote.">
+                  <span>Gerar TODOS os Momentos Encontrados (Lote Completo)</span>
                 </button>
                 <button id="btn-step1-next" class="btn btn-primary" disabled
-                  data-tooltip="Avanca para configurar o modo 9:16 ou 16:9, estilos visuais, zoom e legendas.">
+                  data-tooltip="Avanca para configurar o modo 9:16 ou 16:9, estilos visuais, zoom 1.24x, slow-motion e legendas.">
                   <span>Avancar para Estilo &amp; Efeitos</span>
                   <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><polyline points="9 18 15 12 9 6"/></svg>
                 </button>
@@ -144,16 +205,177 @@
               <div class="progress-track"><div id="auto-progress-fill-step1" class="progress-fill"></div></div>
             </div>
 
+            <!-- Campo Principal "Qual e o jogo?" + Ficha do Jogo Editavel + Tendencias do Dia -->
+            <div class="card mb-4" id="game-identifier-card" style="padding:14px 16px;">
+              <div class="flex items-center justify-between flex-wrap gap-2 mb-3">
+                <div>
+                  <strong style="color:#fff;font-size:14.5px;">Qual e o jogo? (Ficha do Jogo &amp; Motor de Copy BR)</strong>
+                  <div class="text-xs">Escolha, digite livremente ou detecte com a IA. Todos os titulos, descricoes e hashtags usam os personagens, armas e girias desta ficha.</div>
+                </div>
+                <span id="game-sheet-status-badge" class="badge badge-purple">Ficha Ativa</span>
+              </div>
+
+              <div class="flex flex-wrap gap-2 items-center">
+                <input id="game-name-input" class="input" list="games-datalist" style="flex:1;min-width:240px;"
+                  placeholder="Digite ou escolha o jogo (ex: Resident Evil 4 Remake, God of War, RDR2...)"
+                  data-tooltip="Autocompletar inteligente a partir de data/games_db.json ou digite qualquer jogo novo." />
+                <datalist id="games-datalist"></datalist>
+                <button type="button" id="btn-detect-game-ai" class="btn btn-cyan"
+                  data-tooltip="Analisa um frame da gameplay com o Qwen 3.5 Vision para identificar o jogo automaticamente.">
+                  <span>Detectar com a IA</span>
+                </button>
+                <button type="button" id="btn-toggle-game-sheet" class="btn btn-sm"
+                  data-tooltip="Abre a Ficha do Jogo editavel (personagens, locais, armas, girias BR e hashtags).">
+                  <span>Editar Ficha do Jogo</span>
+                </button>
+              </div>
+
+              <div id="new-game-notice" class="safe-zone-warning hidden mt-2">
+                Jogo novo — revise a ficha para textos mais precisos
+              </div>
+
+              <!-- Tendencias do Dia (Hashtags em alta) -->
+              <div class="flex flex-wrap gap-2 items-center mt-3">
+                <span class="text-xs" style="font-weight:700;">Tendencias do Dia:</span>
+                <input id="trending-tags-input" class="input" style="flex:1;min-width:220px;"
+                  placeholder="Cole tags em alta separadas por espaco ou virgula (ex: #GameplayBR #PS4Clips #GamerBrasil)"
+                  data-tooltip="Hashtags em alta injetadas automaticamente junto aos reservatorios sem repeticao." />
+                <button type="button" id="btn-save-trending" class="btn btn-sm btn-primary"
+                  data-tooltip="Salva as Tendencias do Dia para todos os proximos kits de copy.">
+                  <span>Salvar Tendencias</span>
+                </button>
+              </div>
+
+              <!-- Collapsible Editable Game Sheet (data/games_db.json) -->
+              <div id="game-sheet-editor" class="hidden mt-3" style="padding-top:12px;border-top:1px solid var(--border-subtle);">
+                <div class="grid-2">
+                  <div>
+                    <label class="field-label">Nome Oficial do Jogo</label>
+                    <input id="gs-official-name" class="input" placeholder="Ex: Resident Evil 4 Remake" />
+                  </div>
+                  <div>
+                    <label class="field-label">Apelidos / Siglas (separados por virgula)</label>
+                    <input id="gs-aliases" class="input" placeholder="re4, re4 remake, biohazard 4" />
+                  </div>
+                  <div>
+                    <label class="field-label">Genero</label>
+                    <select id="gs-genre" class="select">
+                      <option value="acao">Acao &amp; Aventura</option>
+                      <option value="terror">Terror &amp; Sobrevivencia</option>
+                      <option value="tiro">Tiro / FPS / Tatico</option>
+                      <option value="mundo_aberto">Mundo Aberto</option>
+                      <option value="rpg">RPG / Soulslike</option>
+                      <option value="luta">Luta</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label class="field-label">Personagens Principais (virgula)</label>
+                    <input id="gs-characters" class="input" placeholder="Leon S. Kennedy, Ashley, Ada Wong, Krauser" />
+                  </div>
+                  <div>
+                    <label class="field-label">Locais / Mapas (virgula)</label>
+                    <input id="gs-locations" class="input" placeholder="Vila, Castelo, Ilha, Igreja" />
+                  </div>
+                  <div>
+                    <label class="field-label">Armas / Itens Iconicos (virgula)</label>
+                    <input id="gs-weapons" class="input" placeholder="Red9, Riot Gun, Faca de Combate, Serra Eletrica" />
+                  </div>
+                  <div>
+                    <label class="field-label">Girias BR da Comunidade (virgula)</label>
+                    <input id="gs-slangs" class="input" placeholder="parry perfeito, no sufoco, quase fui de base" />
+                  </div>
+                  <div>
+                    <label class="field-label">Hashtags Especificas do Jogo (virgula)</label>
+                    <input id="gs-hashtags" class="input" placeholder="#ResidentEvil4, #RE4Remake, #LeonKennedy" />
+                  </div>
+                </div>
+                <div class="flex justify-between items-center mt-3">
+                  <span class="text-xs">Salvo permanentemente em <code>data/games_db.json</code> com backup automatico.</span>
+                  <button type="button" id="btn-save-game-sheet" class="btn btn-sm btn-success">
+                    <span>Salvar Ficha do Jogo</span>
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            <!-- Seletor de Destino Inteligente Multi-Plataforma (1 Clique) -->
+            <div class="card mb-4" style="padding:14px 16px;">
+              <div class="flex items-center justify-between flex-wrap gap-2 mb-3">
+                <div>
+                  <strong style="color:#fff;font-size:14px;">Destino Inteligente Multi-Plataforma (Tamanho &amp; Hashtags Automaticas)</strong>
+                  <div class="text-xs">Escolha em 1 clique como a IA deve calibrar a duracao e os metadados de cada corte.</div>
+                </div>
+                <span id="active-target-mode-badge" class="badge badge-purple">Hibrido IA Ativo</span>
+              </div>
+              <div id="target-mode-selector" class="grid-4">
+                <button type="button" class="target-mode-card selected" data-target-mode="hibrido"
+                  data-tooltip="A IA analisa cada cena: explosoes/sustos viram cortes de 20-32s (Ideal TikTok/Reels) e lutas/dialogos viram 36-55s (Ideal YouTube Shorts).">
+                  <div class="flex items-center justify-between gap-2">
+                    <span style="font-weight:700;color:#fff;font-size:13px;">Modo Hibrido IA</span>
+                    <span class="badge badge-purple">Recomendado</span>
+                  </div>
+                  <div class="text-xs">Automatico: cenas rapidas em 20s–32s (TikTok/Reels) e lutas/cutscenes em 36s–55s (YouTube Shorts).</div>
+                </button>
+
+                <button type="button" class="target-mode-card" data-target-mode="tiktok_reels"
+                  data-tooltip="Forca todos os cortes do lote em 20s-32s para maxima retencao, replay rapido e hashtags #fyp #gaming #viral.">
+                  <div class="flex items-center justify-between gap-2">
+                    <span style="font-weight:700;color:#fff;font-size:13px;">Foco TikTok &amp; Reels (20s–32s)</span>
+                    <span class="badge badge-green">Alcance</span>
+                  </div>
+                  <div class="text-xs">Cortes enxutos de alta retencao e replay rapido + hashtags de alcance (#fyp #gaming #ps4 #viral).</div>
+                </button>
+
+                <button type="button" class="target-mode-card" data-target-mode="tiktok_long"
+                  data-tooltip="Expande contexto antes e depois da acao para 61s-90s (elegivel ao programa de monetizacao do TikTok Creator Rewards).">
+                  <div class="flex items-center justify-between gap-2">
+                    <span style="font-weight:700;color:#fff;font-size:13px;">TikTok Monetizavel (61s–90s)</span>
+                    <span class="badge badge-amber">Monetizavel</span>
+                  </div>
+                  <div class="text-xs">Versao completa acima de 1 minuto (61s–90s) com contexto total antes e depois do climax para monetizar no TikTok.</div>
+                </button>
+
+                <button type="button" class="target-mode-card" data-target-mode="youtube_shorts"
+                  data-tooltip="Forca cenas completas de 36s-55s com contexto, tensao e desfecho + #Shorts e termos de busca do YouTube.">
+                  <div class="flex items-center justify-between gap-2">
+                    <span style="font-weight:700;color:#fff;font-size:13px;">Foco YouTube Shorts (36s–55s)</span>
+                    <span class="badge badge-blue">YouTube Shorts</span>
+                  </div>
+                  <div class="text-xs">Cenas completas com contexto, tensao e desfecho + #Shorts e termos fortes de busca do YouTube.</div>
+                </button>
+              </div>
+            </div>
+
             <!-- Upload & Local Path Card -->
             <div class="card mb-4">
               <div id="dropzone" class="dropzone"
-                data-tooltip="Clique ou arraste um video MP4/MKV/MOV da sua gameplay de PS4/PS5 para importar.">
-                <input id="file-input" type="file" accept=".mp4,.mkv,.mov,.avi,.webm,.m4v" class="hidden" />
+                data-tooltip="Clique para abrir o seletor instantaneo do Windows (zero copia de GBs) ou arraste um video MP4/MKV/MOV aqui.">
+                <input id="file-input" type="file" accept=".mp4,.mkv,.mov,.avi,.webm,.m4v,.ts" class="hidden" />
                 <div class="dropzone-icon">
                   <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
                 </div>
-                <div style="font-size:15px;font-weight:700;color:#fff;">Arraste sua gameplay aqui ou clique para escolher o arquivo</div>
-                <div class="text-muted mt-2">Suporta MP4, MKV, MOV, WEBM • Deteccao automatica de combates, sustos, mortes cinematograficas e filtro anti-tedio PS4</div>
+                <div style="font-size:15px;font-weight:700;color:#fff;">Arraste sua gameplay aqui ou clique para escolher o arquivo (Instantaneo)</div>
+                <div class="text-muted mt-2">Suporta MP4, MKV, MOV, WEBM, AVI • Leitura direta do disco sem duplicar arquivos gigantes de PS4/PS5</div>
+                <div class="flex flex-wrap gap-2 mt-3" style="justify-content:center;">
+                  <button type="button" id="btn-browse-native" class="btn btn-primary"
+                    data-tooltip="Abre a janela nativa do Windows e importa o caminho do video instantaneamente sem copiar gigabytes.">
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
+                    <span>Escolher Arquivo do PC (Instantaneo)</span>
+                  </button>
+                  <button type="button" id="btn-upload-fallback" class="btn btn-sm"
+                    data-tooltip="Alternativa usando o seletor padrao do navegador com envio em chunks para a pasta interna.">
+                    <span>Upload via Navegador (Fallback)</span>
+                  </button>
+                </div>
+              </div>
+
+              <!-- Immediate Import Loading Indicator -->
+              <div id="import-loading-banner" class="progress-box hidden" style="margin:14px 0 0;">
+                <div class="flex items-center justify-between gap-2">
+                  <strong id="import-loading-msg" style="color:#fff;">Carregando gameplay e lendo duracao/FPS via FFprobe...</strong>
+                  <span id="import-loading-pct" class="badge badge-cyan">Lendo...</span>
+                </div>
+                <div class="progress-track"><div id="import-loading-fill" class="progress-fill" style="width:45%;"></div></div>
               </div>
 
               <div class="local-import-row">
@@ -167,24 +389,27 @@
                 </button>
               </div>
 
-              <!-- Active Project Summary Pill -->
-              <div id="active-video-banner" class="hidden mt-4" style="padding:12px 14px;border-radius:11px;background:rgba(16,185,129,0.1);border:1px solid rgba(16,185,129,0.35);display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;">
-                <div class="flex items-center gap-3">
-                  <span class="badge badge-green">VIDEO CARREGADO</span>
-                  <strong id="active-video-name" style="color:#fff;"></strong>
-                  <span id="active-video-meta" class="text-muted"></span>
+              <!-- Active Project Summary Card -->
+              <div id="active-video-banner" class="hidden mt-4" style="padding:14px 16px;border-radius:12px;background:rgba(16,185,129,0.11);border:1px solid rgba(16,185,129,0.42);display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;">
+                <div class="flex items-center gap-3 flex-wrap">
+                  <span id="active-video-badge" class="badge badge-green">Gameplay Pronta</span>
+                  <div>
+                    <strong id="active-video-name" style="color:#fff;font-size:14px;display:block;"></strong>
+                    <span id="active-video-meta" class="text-muted" style="font-size:12.5px;"></span>
+                  </div>
                 </div>
                 <div class="flex flex-wrap gap-2">
                   <button id="btn-auto-quick-step1" class="btn btn-sm btn-auto-magic"
-                    data-tooltip="Analisa a gameplay, renderiza os 5 melhores clipes 9:16 com Kit Viral e abre direto a Biblioteca.">
-                    <span>Modo Automatico Top 5</span>
+                    data-tooltip="Escaneia 100% do video, pula trechos antigos e gera os proximos 10 clipes ineditos direto na Biblioteca.">
+                    <span>Proximos 10 Ineditos</span>
                   </button>
                   <button id="btn-quick-analyze-step1" class="btn btn-sm btn-primary"
-                    data-tooltip="Inicia imediatamente a analise multimodal da gameplay para revisar o ranking antes de exportar.">
-                    <span>Apenas Analisar</span>
+                    data-tooltip="Inicia imediatamente a analise multimodal da gameplay inteira para revisar o ranking completo antes de exportar.">
+                    <span>Analisar Linha do Tempo</span>
                   </button>
                 </div>
               </div>
+              <div id="time-estimate-banner" class="estimate-banner hidden"></div>
             </div>
 
             <!-- Calibrated PS4 Game Profiles -->
@@ -205,6 +430,31 @@
               </div>
               <div id="recent-projects-list" class="flex flex-wrap gap-2"></div>
             </div>
+
+            <!-- Pasta Monitorada PS4 (E:\PS4\SHARE\Video Clips) -->
+            <div class="card mt-4" id="watcher-card" style="padding:14px 16px;">
+              <div class="flex items-center justify-between flex-wrap gap-2 mb-2">
+                <div>
+                  <strong style="color:#fff;font-size:14px;">Pasta Monitorada PS4 (Fila Automatica)</strong>
+                  <div class="text-xs">Detecta novos MP4s copiados do PS4 (ex: <code>E:\PS4\SHARE\Video Clips</code>) e coloca na fila automaticamente.</div>
+                </div>
+                <div class="flex items-center gap-2">
+                  <span id="watcher-status-badge" class="badge badge-purple">Desligado</span>
+                  <label class="switch">
+                    <input id="watcher-enabled-toggle" type="checkbox" />
+                    <span class="slider"></span>
+                  </label>
+                </div>
+              </div>
+              <div class="flex flex-wrap gap-2 items-center mt-2">
+                <input id="watcher-folder-input" class="input" style="flex:1;min-width:240px;"
+                  value="E:\PS4\SHARE\Video Clips"
+                  data-tooltip="Caminho da pasta onde seus clipes do PS4/PS5 chegam (pendrive, HD externo ou pasta local)." />
+                <button type="button" id="btn-watcher-save" class="btn btn-sm btn-primary"><span>Salvar Pasta</span></button>
+                <button type="button" id="btn-watcher-scan" class="btn btn-sm btn-cyan"><span>Verificar Agora</span></button>
+              </div>
+              <div id="watcher-queue-list" class="flex mt-3" style="flex-direction:column;gap:6px;"></div>
+            </div>
           </div>
 
           <!-- STEP 2: ESTILO & EFEITOS -->
@@ -219,13 +469,17 @@
                   data-tooltip="Volta para a etapa de importacao de video e selecao de jogo.">
                   <span>Voltar</span>
                 </button>
-                <button id="btn-auto-mode-step2" class="btn btn-auto-magic btn-lg"
-                  data-tooltip="Executa toda a cadeia sem paradas: Analise Multimodal -> Visao Qwen 3.5 -> Renderiza Top 5 -> Kit Viral -> Abre Biblioteca pronta.">
+                <button id="btn-auto-next10-step2" class="btn btn-auto-magic btn-lg"
+                  data-tooltip="Analisa 100% do video, pula trechos ja exportados e gera os proximos 10 clipes ineditos automaticamente.">
                   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
-                  <span>Modo Automatico (Analisar + Gerar Top 5 Agora)</span>
+                  <span>Gerar Proximos 10 Clipes Ineditos</span>
+                </button>
+                <button id="btn-auto-all-step2" class="btn btn-success btn-lg"
+                  data-tooltip="Gera TODOS os momentos ineditos encontrados em todo o video (lote completo sem pausas).">
+                  <span>Gerar TODOS (Lote Completo)</span>
                 </button>
                 <button id="btn-start-analysis" class="btn btn-primary btn-lg"
-                  data-tooltip="Executa fusao multimodal (FFmpeg Audio + OpenCV Optical Flow + Qwen 3.5 Vision) para rankear todos os momentos epicos antes de escolher.">
+                  data-tooltip="Escaneia 100% da gameplay (FFmpeg + OpenCV + Qwen 3.5 Vision) para revisar o ranking completo no Passo 3.">
                   <span>Analisar e Revisar Ranking</span>
                 </button>
               </div>
@@ -268,35 +522,151 @@
             <!-- Mode 1 Config Panel -->
             <div id="mode1-config-panel">
               <div class="card mb-4">
-                <h3 style="margin:0 0 12px;font-size:14.5px;color:#fff;">3 Estilos de Enquadramento 9:16 em 1 Clique</h3>
-                <div class="grid-3">
-                  <div class="style-card selected" data-style="viral_blur"
-                    data-tooltip="Mantem a tela 16:9 inteira sem cortar HUD ou legendas do jogo, com fundo desfocado animado.">
-                    <div class="phone-mock viral_blur">
-                      <div class="mock-hook-pill"></div>
-                      <div class="mock-frame"></div>
+                <div class="flex items-center justify-between flex-wrap gap-2 mb-3">
+                  <div>
+                    <h3 style="margin:0;font-size:14.5px;color:#fff;">4 Layouts de Enquadramento 1080×1920 (Escala Lanczos PS4 720p/1080p)</h3>
+                    <div class="text-xs">Escolha como o jogo preenche a tela vertical preservando nitidez e HUD.</div>
+                  </div>
+                  <div class="flex items-center gap-2">
+                    <span class="text-xs" style="font-weight:700;">Modo Cenas (Anti-Tedio):</span>
+                    <select id="select-scene-mode" class="select" style="width:auto;min-width:205px;"
+                      data-tooltip="Controla como o filtro anti-tedio trata cutscenes e dialogos falados.">
+                      <option value="keep_dialogue">Manter cutscenes com fala</option>
+                      <option value="prioritize_gameplay">Priorizar gameplay</option>
+                      <option value="ignore_cutscenes">Ignorar cutscenes</option>
+                    </select>
+                  </div>
+                </div>
+                <div class="grid-4">
+                  <div class="style-card selected" data-style="fit"
+                    data-tooltip="Fit (Blur): mantem 16:9 completo sem cortar HUD ou legendas + fundo blur vibrante (escala Lanczos).">
+                    <div class="flex items-center gap-3">
+                      <div class="layout-mini-phone"><div class="layout-mini-frame fit"></div></div>
+                      <div>
+                        <div style="font-weight:700;color:#fff;">Fit (Blur)</div>
+                        <div class="text-xs">16:9 inteiro sem cortar HUD + fundo blur animado.</div>
+                      </div>
                     </div>
-                    <div style="font-weight:700;color:#fff;text-align:center;">Viral Blur</div>
-                    <div class="text-xs" style="text-align:center;">16:9 centralizada sem cortar HUD/legendas originais + fundo blur animado.</div>
                   </div>
 
-                  <div class="style-card" data-style="tela_cheia"
-                    data-tooltip="Preenche toda a tela vertical 9:16 com foco no centro da acao e zoom de impacto dinamico.">
-                    <div class="phone-mock tela_cheia">
-                      <div class="mock-hook-pill"></div>
-                      <div class="mock-frame"></div>
+                  <div class="style-card" data-style="big"
+                    data-tooltip="Big (~4:3): recorte ampliado preenchendo mais tela vertical mantendo HUD superior/inferior visivel (Lanczos).">
+                    <div class="flex items-center gap-3">
+                      <div class="layout-mini-phone"><div class="layout-mini-frame big"></div></div>
+                      <div>
+                        <div style="font-weight:700;color:#fff;">Big (~4:3 HUD)</div>
+                        <div class="text-xs">Recorte ~4:3 maior na tela mantendo o HUD visivel.</div>
+                      </div>
                     </div>
-                    <div style="font-weight:700;color:#fff;text-align:center;">Tela Cheia Pro</div>
-                    <div class="text-xs" style="text-align:center;">Crop 9:16 preenchido com foco inteligente na acao + zoom de impacto.</div>
                   </div>
 
-                  <div class="style-card" data-style="clipe_limpo"
-                    data-tooltip="Exporta sem textos sobrepostos, apenas corte cirurgico, zoom de impacto e realce de cor/contraste.">
-                    <div class="phone-mock clipe_limpo">
-                      <div class="mock-frame"></div>
+                  <div class="style-card" data-style="fill"
+                    data-tooltip="Fill (Tela Cheia 9:16): preenche 100% da tela vertical com Smart Action Tracking + escala Lanczos.">
+                    <div class="flex items-center gap-3">
+                      <div class="layout-mini-phone"><div class="layout-mini-frame fill"></div></div>
+                      <div>
+                        <div style="font-weight:700;color:#fff;">Fill (Tela Cheia)</div>
+                        <div class="text-xs">9:16 imersivo total com foco na acao via Optical Flow.</div>
+                      </div>
                     </div>
-                    <div style="font-weight:700;color:#fff;text-align:center;">Clipe Limpo</div>
-                    <div class="text-xs" style="text-align:center;">Zero textos sobrepostos — apenas corte cirurgico, zoom e correcao de cor.</div>
+                  </div>
+
+                  <div class="style-card" data-style="auto"
+                    data-tooltip="Auto (IA): escolhe automaticamente Big para combates/HUD, Fill para acrobacias e Fit para dialogos.">
+                    <div class="flex items-center gap-3">
+                      <div class="layout-mini-phone"><div class="layout-mini-frame auto"></div></div>
+                      <div>
+                        <div style="font-weight:700;color:#fff;">Auto (IA)</div>
+                        <div class="text-xs">Escolhe o melhor layout automaticamente por cena.</div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <!-- P1: Editor Visual Interativo de Titulo 9:16 (overlay.json -> .ass PlayRes 1080x1920) -->
+              <div class="card mb-4" id="overlay-editor-card">
+                <div class="flex items-center justify-between flex-wrap gap-2 mb-3">
+                  <div>
+                    <h3 style="margin:0;font-size:14.5px;color:#fff;">Editor Visual Interativo de Titulo 9:16 (Posicao 100% Identica no Video)</h3>
+                    <div class="text-xs">Digite, arraste o titulo na previa com ima central e ajuste cor/fonte/animacao. Salvo em <code>overlay.json</code> e renderizado via <code>.ass</code> 1080×1920.</div>
+                  </div>
+                  <div class="flex gap-2">
+                    <button type="button" id="btn-overlay-center" class="btn btn-sm"
+                      data-tooltip="Centraliza horizontalmente em X=540 dentro da Safe Zone (Y=250)."><span>Centralizar</span></button>
+                    <button type="button" id="btn-overlay-save" class="btn btn-sm btn-success"
+                      data-tooltip="Salva posicao, estilo e animacao em data/overlay.json."><span>Salvar Titulo</span></button>
+                  </div>
+                </div>
+
+                <div class="overlay-editor-wrap">
+                  <div>
+                    <div id="phone-stage-916" class="phone-stage-916"
+                      data-tooltip="Previa proporcional 9:16 (1080x1920). Arraste o titulo com o mouse para posicionar.">
+                      <div class="zone-forbidden-top">ZONA TOPO UI (0–150px)</div>
+                      <div class="zone-margin-left"></div>
+                      <div class="zone-margin-right"></div>
+                      <div class="zone-safe-ideal" title="Safe Zone Ideal (y: 150-400, x: 120-960)"></div>
+                      <div id="snap-guide-center" class="snap-guide-center"></div>
+                      <div class="zone-forbidden-right">BOTOES TIKTOK/SHORTS</div>
+                      <div class="zone-forbidden-bottom">ZONA LEGENDAS &amp; BOTOES BASE</div>
+                      <div id="draggable-hook-el" class="draggable-hook-title" style="left:135px;top:62.5px;">OLHA ESSE FINAL ABSURDO...</div>
+                    </div>
+                    <div id="overlay-coords-readout" class="text-xs mt-2" style="text-align:center;font-family:Consolas,monospace;">
+                      Posicao 1080×1920: X=540 · Y=250 (Safe Zone OK)
+                    </div>
+                  </div>
+
+                  <div class="flex" style="flex-direction:column;gap:10px;">
+                    <div id="overlay-safe-warning" class="safe-zone-warning hidden">
+                      Atencao: o titulo saiu da Safe Zone ideal (Y: 150–400, margem lateral 120px) e pode ficar atras dos botoes do TikTok/Shorts!
+                    </div>
+                    <div>
+                      <label class="field-label">Texto do Titulo / Gancho (Preview ao vivo)</label>
+                      <input id="ov-text-input" class="input" value="OLHA ESSE FINAL ABSURDO..." />
+                    </div>
+                    <div class="grid-3">
+                      <div>
+                        <label class="field-label">Fonte</label>
+                        <select id="ov-font-select" class="select">
+                          <option value="Arial Black">Arial Black</option>
+                          <option value="Impact">Impact</option>
+                          <option value="Segoe UI">Segoe UI Bold</option>
+                          <option value="Arial">Arial Bold</option>
+                        </select>
+                      </div>
+                      <div>
+                        <label class="field-label">Tamanho (<span id="ov-size-val">52</span>px)</label>
+                        <input id="ov-size-input" type="range" min="32" max="80" value="52" style="width:100%;" />
+                      </div>
+                      <div>
+                        <label class="field-label">Animacao</label>
+                        <select id="ov-anim-select" class="select">
+                          <option value="fade">Fade Suave</option>
+                          <option value="pop">Pop Impacto</option>
+                          <option value="slide_down">Deslizar Topo</option>
+                          <option value="none">Estatico</option>
+                        </select>
+                      </div>
+                    </div>
+                    <div class="grid-4">
+                      <div>
+                        <label class="field-label">Cor do Texto</label>
+                        <input id="ov-color-input" type="color" class="input" value="#FFD700" style="height:36px;padding:2px;" />
+                      </div>
+                      <div>
+                        <label class="field-label">Cor Contorno</label>
+                        <input id="ov-outline-color" type="color" class="input" value="#000000" style="height:36px;padding:2px;" />
+                      </div>
+                      <div>
+                        <label class="field-label">Contorno (px)</label>
+                        <input id="ov-outline-width" type="number" min="0" max="8" value="4" class="input" />
+                      </div>
+                      <div>
+                        <label class="field-label">Duracao (seg)</label>
+                        <input id="ov-duration-sec" type="number" step="0.1" min="1.5" max="4.5" value="2.3" class="input" />
+                      </div>
+                    </div>
                   </div>
                 </div>
               </div>
@@ -307,10 +677,10 @@
                   <h3 style="margin:0 0 12px;font-size:14.5px;color:#fff;">Mecanicas Avancadas de Retencao &amp; Engajamento</h3>
                   <div class="flex" style="flex-direction:column;gap:8px;">
                     <div class="toggle-row"
-                      data-tooltip="Exibe gancho curto de curiosidade aberta (max 6 palavras) nos 2,5s iniciais com Auto-Fit e MarginV=140.">
+                      data-tooltip="Exibe gancho curto de alta curiosidade por 3,8s (t=0,2s a 4,0s) com caixa escura arredondada e fonte 48px legivel.">
                       <div>
-                        <div style="font-weight:600;color:#fff;">Gancho de Curiosidade Aberta (2,5s no Topo)</div>
-                        <div class="text-xs">Max 6 palavras gerado pelo Qwen 3.5 com Auto-Fit e margens seguras (MarginV=140).</div>
+                        <div style="font-weight:600;color:#fff;">Gancho Legivel no Topo (3,8s • Caixa Escura 48px)</div>
+                        <div class="text-xs">Exibido de t=0,2s a 4,0s com fundo escuro 0x0B0D12 e texto 100% unico por cena.</div>
                       </div>
                       <label class="switch">
                         <input id="toggle-hook" type="checkbox" checked />
@@ -319,10 +689,10 @@
                     </div>
 
                     <div class="toggle-row"
-                      data-tooltip="Insere um flash ultrarrapido de 0,3s do pico da acao no segundo 0 para prender a atencao imediatamente.">
+                      data-tooltip="Insere um trecho real de 1,5s a 2,0s do pico da acao (0,5s antes ate ~1,3s depois) + micro-flash de 0,1s e retorno ao contexto normal com audio sincronizado.">
                       <div>
-                        <div style="font-weight:600;color:#fff;">Preview Flash do Pico (0,3s no Segundo 0)</div>
-                        <div class="text-xs">Micro-teaser de 0,3s do momento de maior impacto logo na abertura do Short.</div>
+                        <div style="font-weight:600;color:#fff;">Gancho Real de Pico (1,8s + Micro-Flash 0,1s)</div>
+                        <div class="text-xs">Mostra 1,8s reais do climax na abertura + flash de 0,1s deslocando legendas e zooms automaticamente.</div>
                       </div>
                       <label class="switch">
                         <input id="toggle-preview-flash" type="checkbox" checked />
@@ -331,10 +701,34 @@
                     </div>
 
                     <div class="toggle-row"
-                      data-tooltip="Corta o final exatamente no auge da acao ou morte sem segundos mortos, disparando replays automaticos.">
+                      data-tooltip="Zoom suave e nitido (1.12x-1.15x, ease-in/ease-out, sem bordas pretas, maximo 3 zooms por clipe com intervalo minimo de 6s).">
                       <div>
-                        <div style="font-weight:600;color:#fff;">Loop Infinito (Corte Seco no Climax)</div>
-                        <div class="text-xs">Encerra no pico da acao/morte sem sobras mortas para maximizar replays.</div>
+                        <div style="font-weight:600;color:#fff;">Zoom de Precisao (1.14x Suave • Max 3 / Min 6s)</div>
+                        <div class="text-xs">Ease-in/ease-out nitido preservando HUD, fundindo rajadas proximas em 1 zoom limpo.</div>
+                      </div>
+                      <label class="switch">
+                        <input id="toggle-impact-zoom" type="checkbox" checked />
+                        <span class="slider"></span>
+                      </label>
+                    </div>
+
+                    <div class="toggle-row"
+                      data-tooltip="Aplica Camera Lenta Controlada (0.75x) exclusivamente no golpe final ou morte, sem exageros no meio do clipe.">
+                      <div>
+                        <div style="font-weight:600;color:#fff;">Camera Lenta Controlada (0.75x — Golpe Final / Morte)</div>
+                        <div class="text-xs">Slow-motion 0.75x exclusivo no golpe final ou execucao com toggle para desligar.</div>
+                      </div>
+                      <label class="switch">
+                        <input id="toggle-slowmo" type="checkbox" checked />
+                        <span class="slider"></span>
+                      </label>
+                    </div>
+
+                    <div class="toggle-row"
+                      data-tooltip="Expande cada clipe dinamicamente entre 25s e 55s ate a luta ou dialogo terminar naturalmente, sem cortar cenas no meio.">
+                      <div>
+                        <div style="font-weight:600;color:#fff;">Cenas Completas Dinamicas (25s–55s sem Cortar no Meio)</div>
+                        <div class="text-xs">Acompanha lutas longas, chefes e dialogos ate a pausa natural (25s a 55s).</div>
                       </div>
                       <label class="switch">
                         <input id="toggle-infinite-loop" type="checkbox" checked />
@@ -343,10 +737,10 @@
                     </div>
 
                     <div class="toggle-row"
-                      data-tooltip="Exibe um badge discreto nos 2s finais com pergunta curta gerada pelo Qwen sobre a cena para estimular comentarios.">
+                      data-tooltip="Exibe um badge discreto nos 2s finais com pergunta curta gerada pelo Qwen sobre a cena (desligado automaticamente se Final em Loop Continuo estiver ativo).">
                       <div>
-                        <div style="font-weight:600;color:#fff;">Gatilho Visual de Comentarios (CTA 2s Finais)</div>
-                        <div class="text-xs">Badge discreto no final com pergunta da cena (ex: &quot;Voce escaparia dessa?&quot;).</div>
+                        <div style="font-weight:600;color:#fff;">Gatilho Visual de Comentarios (CTA 2s Finais — Opcional)</div>
+                        <div class="text-xs">Badge discreto no final ou deixe desligado para usar o CTA pronto no comentario fixo.</div>
                       </div>
                       <label class="switch">
                         <input id="toggle-cta-comment" type="checkbox" checked />
@@ -355,13 +749,25 @@
                     </div>
 
                     <div class="toggle-row"
-                      data-tooltip="Zoom rapido 1.00x -> 1.18x -> 1.00x (0.6s) + micro-shake + contraste sincronizado APENAS nos picos reais de impacto e morte.">
+                      data-tooltip="Alterna automaticamente layout (Fit/Big/Fill), cor, animacao e posicao Y na Safe Zone entre clipes consecutivos do lote.">
                       <div>
-                        <div style="font-weight:600;color:#fff;">Zoom de Impacto Inteligente + Micro-Shake</div>
-                        <div class="text-xs">Punch-In/Out (1.00x → 1.18x → 1.00x em 0,6s) nos picos; zoom suave 1.06x em dialogos.</div>
+                        <div style="font-weight:600;color:#fff;">Variacao Anti-Fabrica (Alterna Layout, Cor e Posicao)</div>
+                        <div class="text-xs">Evita que clipes em lote parecam identicos, variando estilo e posicao automaticamente.</div>
                       </div>
                       <label class="switch">
-                        <input id="toggle-impact-zoom" type="checkbox" checked />
+                        <input id="toggle-anti-factory" type="checkbox" checked />
+                        <span class="slider"></span>
+                      </label>
+                    </div>
+
+                    <div class="toggle-row"
+                      data-tooltip="Suaviza o final do audio para reconectar ao segundo 0 sem corte brusco e move o CTA para o comentario fixo (nao quebra o loop).">
+                      <div>
+                        <div style="font-weight:600;color:#fff;">Final em Loop Continuo + CTA Comentario Fixo</div>
+                        <div class="text-xs">Reconecta o final ao inicio sem quebrar o replay e gera texto pronto para fixar nos comentarios.</div>
+                      </div>
+                      <label class="switch">
+                        <input id="toggle-seamless-loop" type="checkbox" />
                         <span class="slider"></span>
                       </label>
                     </div>
@@ -430,24 +836,24 @@
 
                 <!-- Subtitles Control + Visual Style Selector -->
                 <div class="card">
-                  <h3 style="margin:0 0 12px;font-size:14.5px;color:#fff;">Legendas Auto-Fit &amp; Estilo Visual</h3>
+                  <h3 style="margin:0 0 12px;font-size:14.5px;color:#fff;">Legendas Automaticas Whisper (Ativadas por Padrao)</h3>
                   <div class="flex" style="flex-direction:column;gap:10px;">
-                    <label class="toggle-row card-interactive selected" id="sub-opt-off"
-                      data-tooltip="Ideal para jogos de PS4 que ja possuem legendas em portugues na tela, evitando sobreposicao.">
+                    <label class="toggle-row card-interactive selected" id="sub-opt-whisper"
+                      data-tooltip="Transcreve falas e cutscenes automaticamente (PT/EN com VAD) no audio ja editado e queima legenda viral na Safe Zone MarginV=290.">
                       <div>
-                        <div style="font-weight:600;color:#fff;">Desligado (Jogo ja tem legenda na tela)</div>
-                        <div class="text-xs">Padrao recomendado para jogos legendados em PT-BR.</div>
+                        <div style="font-weight:600;color:#fff;">Legenda Automatica Whisper (ATIVADA — Padrao)</div>
+                        <div class="text-xs">Arial Black 54px, Outline=4, max 2 linhas x 22 chars, Safe Zone MarginV=290.</div>
                       </div>
-                      <input type="radio" name="subtitles_mode" value="off" checked />
+                      <input type="radio" name="subtitles_mode" value="whisper" checked />
                     </label>
 
-                    <label class="toggle-row card-interactive" id="sub-opt-whisper"
-                      data-tooltip="Transcreve falas e cutscenes com Whisper Auto-Fit (MarginL/R=60, MarginV=260) e ativa zoom cinematografico suave 1.00x -> 1.06x.">
+                    <label class="toggle-row card-interactive" id="sub-opt-off"
+                      data-tooltip="Desliga a transcricao Whisper caso o jogo ja tenha legendas grandes nativas na tela.">
                       <div>
-                        <div style="font-weight:600;color:#fff;">Legenda dos Personagens / Cutscenes (Whisper Auto-Fit)</div>
-                        <div class="text-xs">Safe Zone MarginV=260 sem cortar bordas + zoom cinematografico lento (1.06x) nos dialogos.</div>
+                        <div style="font-weight:600;color:#fff;">Desligado (Usar apenas legendas nativas do jogo)</div>
+                        <div class="text-xs">Opcional — desativa as legendas queimadas do Whisper no rodape.</div>
                       </div>
-                      <input type="radio" name="subtitles_mode" value="whisper" />
+                      <input type="radio" name="subtitles_mode" value="off" />
                     </label>
                   </div>
 
@@ -510,28 +916,28 @@
               </div>
               <div class="flex flex-wrap gap-2">
                 <button id="btn-step3-reconfig" class="btn btn-sm"
-                  data-tooltip="Volta para ajustar o estilo de enquadramento, zoom de impacto ou legendas.">
+                  data-tooltip="Volta para ajustar o estilo de enquadramento, zoom 1.24x, slow-motion ou legendas.">
                   <span>Ajustar Estilo</span>
                 </button>
-                <button id="btn-batch-5" class="btn btn-sm btn-primary" data-batch="5"
-                  data-tooltip="Renderiza continuamente os 5 melhores momentos do ranking sem pedir confirmacao entre videos.">
-                  <span>Gerar Top 5</span>
-                </button>
-                <button id="btn-batch-10" class="btn btn-sm btn-primary" data-batch="10"
-                  data-tooltip="Renderiza continuamente os 10 melhores momentos do ranking em lote automatico.">
-                  <span>Gerar Top 10</span>
-                </button>
-                <button id="btn-batch-20" class="btn btn-sm btn-primary" data-batch="20"
-                  data-tooltip="Renderiza continuamente os 20 melhores momentos do ranking em lote automatico.">
-                  <span>Gerar Top 20</span>
+                <button id="btn-batch-next10" class="btn btn-sm btn-auto-magic" data-batch="10"
+                  data-tooltip="Pula automaticamente todos os trechos ja exportados e gera os proximos 10 clipes 100% ineditos.">
+                  <span>Gerar Proximos 10 Clipes Ineditos</span>
                 </button>
                 <button id="btn-batch-all" class="btn btn-sm btn-success" data-batch="all"
-                  data-tooltip="Renderiza TODOS os momentos epicos detectados no video sem pausar entre clipes.">
-                  <span>Gerar Todos</span>
+                  data-tooltip="Extrai TODOS os momentos ineditos encontrados (15, 20, 30+ cenas) em um unico lote continuo.">
+                  <span>Gerar TODOS os Momentos Encontrados (Lote Completo)</span>
+                </button>
+                <button id="btn-batch-5" class="btn btn-sm btn-primary" data-batch="5"
+                  data-tooltip="Gera os proximos 5 momentos ineditos mais bem pontuados do ranking.">
+                  <span>Proximos 5</span>
                 </button>
                 <button id="btn-batch-selected" class="btn btn-sm btn-cyan"
                   data-tooltip="Renderiza somente os clipes que voce marcou manualmente nos cards abaixo.">
                   <span>Gerar Selecionados (<span id="selected-count">0</span>)</span>
+                </button>
+                <button id="btn-reset-history" class="btn btn-sm"
+                  data-tooltip="Limpa o historico de trechos ja exportados deste video para permitir re-exportar cenas antigas.">
+                  <span>Resetar Historico</span>
                 </button>
               </div>
             </div>
@@ -615,6 +1021,8 @@
                   data-tooltip="Filtra mortes brutais do jogador, execucoes, serra eletrica e telas de Game Over.">Mortes Cinematograficas</button>
                 <button class="filter-pill" data-cat="susto_tensao"
                   data-tooltip="Filtra jump scares, emboscadas e picos subitos de tensao.">Sustos &amp; Tensao</button>
+                <button class="filter-pill" data-cat="dialogo_historia"
+                  data-tooltip="Filtra cutscenes e dialogos marcantes detectados pela faixa vocal mesmo sem explosoes.">Dialogos &amp; Cutscenes</button>
                 <button class="filter-pill" data-cat="acrobacia_cinema"
                   data-tooltip="Filtra acrobacias, balancos em alta velocidade e finalizacoes cinematograficas.">Cinema &amp; Acrobacias</button>
               </div>
@@ -642,6 +1050,17 @@
                 <span>Atualizar Biblioteca</span>
               </button>
             </div>
+          </div>
+          <!-- Filtros Rapidos Multi-Plataforma na Biblioteca -->
+          <div class="pill-bar mb-4" id="library-platform-filters">
+            <button class="filter-pill active" data-lib-filter="all"
+              data-tooltip="Exibe todos os clipes renderizados na Biblioteca.">Todos</button>
+            <button class="filter-pill" data-lib-filter="tiktok_reels"
+              data-tooltip="Filtra apenas clipes classificados como Ideal TikTok / Reels (20s-32s e Versoes Curtas 25s).">Ideal TikTok / Reels</button>
+            <button class="filter-pill" data-lib-filter="tiktok_long"
+              data-tooltip="Filtra versoes completas monetizaveis para TikTok (61s-90s).">TikTok 61–90s</button>
+            <button class="filter-pill" data-lib-filter="youtube_shorts"
+              data-tooltip="Filtra apenas clipes classificados como Ideal YouTube Shorts (cenas completas 36s-55s).">Ideal YouTube Shorts</button>
           </div>
           <div id="clips-library-grid" class="grid-auto"></div>
         </section>
@@ -676,27 +1095,49 @@
               </label>
             </div>
 
-            <div class="grid-3 mb-3">
+            <div class="safety-banner mb-3" id="yt-autopilot-audit-warning">
+              <strong style="color:#FBBF24;">AVISO DE CONTA:</strong>
+              <span>Projetos de API sem auditoria do Google enviam videos como PRIVADOS por padrao — teste 1 video antes de agendar em lote.</span>
+            </div>
+
+            <div class="grid-4 mb-3">
               <div>
                 <label class="field-label">Horario Fixo Diario (Local)</label>
                 <input id="yt-autopilot-time" type="time" class="input" value="18:30"
-                  data-tooltip="Horario fixo em que o ClipRush publicara automaticamente 1 Short inedito todos os dias." />
+                  data-tooltip="Horario fixo em que o ClipRush publicara automaticamente Shorts aprovados." />
               </div>
               <div>
                 <label class="field-label">Visibilidade no YouTube</label>
                 <select id="yt-autopilot-privacy" class="select"
-                  data-tooltip="Define se os Shorts enviados pelo piloto automatico entram como Publico, Nao Listado ou Privado.">
-                  <option value="public">Publico (Recomendado)</option>
+                  data-tooltip="Projetos sem auditoria do Google forcam Privado. Teste 1 video antes de usar Publico.">
+                  <option value="private">Privado (Seguro / Padrao)</option>
                   <option value="unlisted">Nao Listado (Revisar antes)</option>
-                  <option value="private">Privado</option>
+                  <option value="public">Publico (Apos auditoria Google)</option>
                 </select>
+              </div>
+              <div>
+                <label class="field-label">Limite Diario de Uploads (<span id="yt-daily-usage-label">0/2 hoje</span>)</label>
+                <input id="yt-autopilot-limit" type="number" min="1" max="10" value="2" class="input"
+                  data-tooltip="Limite maximo de uploads por dia para proteger sua conta e cota da API (padrao: 2/dia)." />
               </div>
               <div style="display:flex;align-items:flex-end;">
                 <button id="btn-save-autopilot" class="btn btn-primary" style="width:100%;"
-                  data-tooltip="Salva o horario diario, privacidade e status ativo do Piloto Automatico YouTube Shorts.">
+                  data-tooltip="Salva horario diario, privacidade, limite diario e aprovacao humana obrigatoria.">
                   <span>Salvar Piloto Diario</span>
                 </button>
               </div>
+            </div>
+
+            <div class="toggle-row mb-3"
+              data-tooltip="Quando ativo (padrao), nenhum video e enviado ao YouTube sem que voce clique explicitamente em 'Aprovar para Publicacao'.">
+              <div>
+                <div style="font-weight:600;color:#fff;">Exigir Aprovacao Humana Explicita Antes de Publicar (Recomendado)</div>
+                <div class="text-xs">Protege sua conta YouTube bloqueando envios automaticos de clipes ainda nao revisados.</div>
+              </div>
+              <label class="switch">
+                <input id="yt-autopilot-approval" type="checkbox" checked />
+                <span class="slider"></span>
+              </label>
             </div>
 
             <div class="flex flex-wrap gap-2 items-center mb-3" style="padding-top:10px;border-top:1px solid var(--border-subtle);">
@@ -758,15 +1199,146 @@
             </div>
           </div>
 
-          <div id="schedule-list" class="flex" style="flex-direction:column;gap:10px;"></div>
+          <div id="schedule-list" class="flex mb-4" style="flex-direction:column;gap:10px;"></div>
+
+          <!-- P2: Agenda Inteligente (1-3 posts/dia + Checklist Pre-Publicacao) -->
+          <div class="card mb-4">
+            <div class="flex items-center justify-between flex-wrap gap-2 mb-3">
+              <div>
+                <h3 style="margin:0;font-size:15px;color:#fff;">Agenda Inteligente (1 a 3 Posts/Dia Alternando Jogos &amp; Plataformas)</h3>
+                <div class="text-xs">Alterna YouTube Shorts, TikTok Curto 25s e TikTok Monetizavel 61–90s com checklist pre-publicacao por slot.</div>
+              </div>
+              <div class="flex items-center gap-2">
+                <select id="smart-agenda-ppd" class="select" style="width:auto;">
+                  <option value="1">1 post / dia</option>
+                  <option value="2" selected>2 posts / dia</option>
+                  <option value="3">3 posts / dia</option>
+                </select>
+                <button id="btn-gen-smart-agenda" class="btn btn-primary btn-sm"><span>Gerar Agenda Inteligente</span></button>
+              </div>
+            </div>
+            <div id="smart-agenda-slots" class="flex" style="flex-direction:column;gap:8px;"></div>
+          </div>
+
+          <!-- P2: Teste A/B de Titulos & Ganchos -->
+          <div class="card mb-4">
+            <div class="flex items-center justify-between flex-wrap gap-2 mb-3">
+              <div>
+                <h3 style="margin:0;font-size:15px;color:#fff;">Teste A/B de Titulo &amp; Gancho</h3>
+                <div class="text-xs">Gere 2 variantes concorrentes para o mesmo clipe e registre qual venceu em retencao.</div>
+              </div>
+              <div class="flex items-center gap-2 flex-wrap">
+                <select id="ab-clip-select" class="select" style="min-width:220px;width:auto;"></select>
+                <button id="btn-create-ab-test" class="btn btn-cyan btn-sm"><span>Gerar Variantes A vs B</span></button>
+              </div>
+            </div>
+            <div id="ab-tests-list" class="flex" style="flex-direction:column;gap:10px;"></div>
+          </div>
+
+          <!-- P2: Painel de Metas de Monetizacao -->
+          <div class="card mb-4">
+            <div class="flex items-center justify-between flex-wrap gap-2 mb-3">
+              <div>
+                <h3 style="margin:0;font-size:15px;color:#fff;">Painel de Metas de Monetizacao (TikTok &amp; YouTube)</h3>
+                <div class="text-xs">Acompanhe sua evolucao rumo a 10.000 seguidores / 100.000 views 30d no TikTok e requisitos do YouTube Partner.</div>
+              </div>
+              <button id="btn-save-goals" class="btn btn-success btn-sm"><span>Salvar Metas</span></button>
+            </div>
+            <div class="grid-4 mb-3">
+              <div><label class="field-label">TikTok Seguidores (Atual)</label><input id="goal-tk-fol-cur" type="number" class="input" value="0" /></div>
+              <div><label class="field-label">TikTok Seguidores (Meta)</label><input id="goal-tk-fol-tgt" type="number" class="input" value="10000" /></div>
+              <div><label class="field-label">TikTok Views 30d (Atual)</label><input id="goal-tk-v30-cur" type="number" class="input" value="0" /></div>
+              <div><label class="field-label">TikTok Views 30d (Meta)</label><input id="goal-tk-v30-tgt" type="number" class="input" value="100000" /></div>
+              <div><label class="field-label">YouTube Inscritos</label><input id="goal-yt-sub-cur" type="number" class="input" value="0" /></div>
+              <div><label class="field-label">YouTube Horas Assistidas</label><input id="goal-yt-hrs-cur" type="number" class="input" value="0" /></div>
+              <div><label class="field-label">YouTube Shorts Views (90d)</label><input id="goal-yt-shv-cur" type="number" class="input" value="0" /></div>
+            </div>
+            <div id="goals-progress-bars"></div>
+          </div>
         </section>
 
-        <!-- ================= VIEW 4: LIMPEZA DE DISCO ================= -->
+        <!-- ================= VIEW: DESEMPENHO & APRENDIZADO DO RANKING (P2) ================= -->
+        <section id="view-desempenho" class="view-section">
+          <div class="section-head">
+            <div>
+              <h1 class="section-title">Desempenho &amp; Aprendizado do Ranking</h1>
+              <p class="section-sub">Registre metricas, importe o CSV oficial do TikTok Studio ou sincronize o YouTube Analytics para o ranking aprender o que mais retem no seu canal.</p>
+            </div>
+            <div class="flex flex-wrap gap-2">
+              <input id="perf-tiktok-csv-input" type="file" accept=".csv" class="hidden" />
+              <button id="btn-perf-import-csv" class="btn btn-cyan"
+                data-tooltip="Importa o arquivo CSV oficial exportado do TikTok Studio Analytics.">
+                <span>Importar CSV TikTok Studio</span>
+              </button>
+              <button id="btn-perf-sync-yt" class="btn btn-yt"
+                data-tooltip="Puxa visualizacoes e retencao diretamente da sua conta YouTube conectada.">
+                <span>Sincronizar YouTube Analytics</span>
+              </button>
+            </div>
+          </div>
+
+          <div id="analytics-kpi-bar" class="grid-4 mb-4"></div>
+
+          <div id="analytics-insights-box" class="card mb-4" style="border-color:rgba(16,185,129,0.4);"></div>
+
+          <!-- Manual Metric Entry Form -->
+          <div class="card mb-4">
+            <h3 style="margin:0 0 12px;font-size:14.5px;color:#fff;">Registrar Metricas de Clipe Publicado</h3>
+            <div class="grid-4 mb-3">
+              <div><label class="field-label">Clipe da Biblioteca</label><select id="perf-clip-select" class="select"></select></div>
+              <div><label class="field-label">Titulo do Video</label><input id="perf-title" class="input" placeholder="Ex: Parry perfeito no RE4" /></div>
+              <div><label class="field-label">Jogo</label><input id="perf-game" class="input" placeholder="Resident Evil 4 Remake" /></div>
+              <div>
+                <label class="field-label">Tipo de Evento</label>
+                <select id="perf-category" class="select">
+                  <option value="combate_intenso">Combate &amp; Acao</option>
+                  <option value="morte_cinematografica">Morte / Execucao</option>
+                  <option value="susto_tensao">Susto &amp; Tensao</option>
+                  <option value="dialogo_historia">Dialogo / Cutscene</option>
+                  <option value="acrobacia_cinema">Cinema &amp; Acrobacia</option>
+                </select>
+              </div>
+              <div>
+                <label class="field-label">Plataforma</label>
+                <select id="perf-platform" class="select">
+                  <option value="tiktok_reels">TikTok Curto (25s)</option>
+                  <option value="tiktok_long">TikTok Monetizavel (61-90s)</option>
+                  <option value="youtube_shorts">YouTube Shorts</option>
+                </select>
+              </div>
+              <div><label class="field-label">Duracao (seg)</label><input id="perf-duration" type="number" class="input" value="28" /></div>
+              <div>
+                <label class="field-label">Estilo de Gancho</label>
+                <select id="perf-hook-style" class="select">
+                  <option value="Gancho de Pico 1.8s">Gancho de Pico 1.8s</option>
+                  <option value="Pergunta Curiosidade">Pergunta Curiosidade</option>
+                  <option value="Impacto Direto">Impacto Direto</option>
+                  <option value="Loop Continuo">Loop Continuo</option>
+                </select>
+              </div>
+              <div><label class="field-label">Visualizacoes (Views)</label><input id="perf-views" type="number" class="input" value="1500" /></div>
+              <div><label class="field-label">% Media Assistida</label><input id="perf-watch-pct" type="number" step="0.1" class="input" value="82" /></div>
+              <div><label class="field-label">Retencao nos 3s (%)</label><input id="perf-ret3-pct" type="number" step="0.1" class="input" value="76" /></div>
+              <div><label class="field-label">Compartilhamentos</label><input id="perf-shares" type="number" class="input" value="24" /></div>
+              <div style="display:flex;align-items:flex-end;">
+                <button id="btn-perf-save" class="btn btn-success" style="width:100%;"><span>Salvar &amp; Recalibrar IA</span></button>
+              </div>
+            </div>
+          </div>
+
+          <div id="analytics-dimensions-grid" class="grid-2 mb-4"></div>
+          <div class="card">
+            <h3 style="margin:0 0 10px;font-size:14.5px;color:#fff;">Historico de Metricas Registradas</h3>
+            <div id="analytics-records-list" class="flex" style="flex-direction:column;gap:8px;"></div>
+          </div>
+        </section>
+
+        <!-- ================= VIEW 4: ARMAZENAMENTO & BACKUP ================= -->
         <section id="view-limpeza" class="view-section">
           <div class="section-head">
             <div>
-              <h1 class="section-title">Limpeza de Disco Inteligente</h1>
-              <p class="section-sub">Libere espaco removendo caches de analise, miniaturas antigas ou uploads temporarios com seguranca.</p>
+              <h1 class="section-title">Gestor de Armazenamento &amp; Backup</h1>
+              <p class="section-sub">Controle quanto GB cada projeto ocupa, limpe caches com seguranca e exporte/restaure suas configuracoes em .zip.</p>
             </div>
             <div class="flex gap-2">
               <button id="btn-scan-disk" class="btn"
@@ -780,8 +1352,59 @@
             </div>
           </div>
 
+          <div id="low-disk-warning-banner" class="safety-banner hidden mb-4">
+            <strong>ALERTA DE ESPACO EM DISCO:</strong>
+            <span>Menos de 10 GB livres no disco! Remova copias antigas de uploads ou renders concluidos abaixo antes de exportar novos lotes.</span>
+          </div>
+
           <div id="disk-summary-bar" class="card mb-4 flex items-center justify-between flex-wrap gap-3"></div>
-          <div id="disk-buckets-grid" class="grid-2"></div>
+          <div id="disk-buckets-grid" class="grid-2 mb-4"></div>
+
+          <!-- P2: Per-Project Storage Manager -->
+          <div class="card mb-4">
+            <h3 style="margin:0 0 10px;font-size:14.5px;color:#fff;">Uso de Espaco por Sessao / Projeto (GB)</h3>
+            <div id="disk-projects-list" class="flex" style="flex-direction:column;gap:8px;"></div>
+          </div>
+
+          <!-- P2: Backup / Restore .zip -->
+          <div class="card">
+            <div class="flex items-center justify-between flex-wrap gap-3">
+              <div>
+                <h3 style="margin:0 0 4px;font-size:14.5px;color:#fff;">Backup &amp; Restauracao Completa (.zip)</h3>
+                <div class="text-xs">Inclui <code>settings.json</code>, <code>config.json</code>, Fichas de Jogos (<code>games_db.json</code>), historico anti-repeticao (<code>exported_history.json</code>), <code>overlay.json</code>, metas e metricas.</div>
+              </div>
+              <div class="flex gap-2 flex-wrap">
+                <button id="btn-backup-export" class="btn btn-primary"><span>Exportar Backup (.zip)</span></button>
+                <input id="backup-import-input" type="file" accept=".zip" class="hidden" />
+                <button id="btn-backup-import" class="btn btn-cyan"><span>Restaurar Backup (.zip)</span></button>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- ================= VIEW: DIAGNOSTICO & VERSAO (P2) ================= -->
+        <section id="view-diagnostico" class="view-section">
+          <div class="section-head">
+            <div>
+              <div class="flex items-center gap-2 mb-1">
+                <h1 class="section-title" style="margin:0;">Diagnostico &amp; Versao</h1>
+                <span id="diag-version-badge" class="badge badge-purple">Versao 2.3.0</span>
+              </div>
+              <p class="section-sub">Status detalhado do motor local, novidades da versao e Autoteste Sintetico ponta a ponta.</p>
+            </div>
+            <button id="btn-run-selftest" class="btn btn-success btn-lg"
+              data-tooltip="Gera um video sintetico curto e testa FFmpeg, FFprobe, Analise 2 Etapas, Motor de Copy e Render 9:16 + Capa ponta a ponta.">
+              <span>Executar Autoteste Sintetico</span>
+            </button>
+          </div>
+
+          <div id="diag-selftest-result" class="card mb-4 hidden" style="border-color:rgba(34,211,238,0.45);"></div>
+          <div id="diag-status-grid" class="health-grid mb-4"></div>
+
+          <div class="card">
+            <h3 style="margin:0 0 12px;font-size:15px;color:#fff;">Novidades (Changelog)</h3>
+            <div id="diag-changelog-list" class="flex" style="flex-direction:column;gap:10px;"></div>
+          </div>
         </section>
 
         <!-- ================= VIEW 5: CONFIGURACOES ================= -->
@@ -823,6 +1446,11 @@
                   <span>Desconectar</span>
                 </button>
               </div>
+            </div>
+
+            <div class="safety-banner mb-3">
+              <strong style="color:#FBBF24;">PROTECAO DPAPI + API YOUTUBE:</strong>
+              <span>Projetos de API sem auditoria do Google enviam videos como PRIVADOS por padrao — teste 1 video antes de agendar em lote. Tokens OAuth sao criptografados no cofre Windows DPAPI.</span>
             </div>
 
             <div class="flex flex-wrap gap-2 items-center">
@@ -888,9 +1516,51 @@
                 <input id="cfg-max-sec" type="number" min="15" max="90" class="input"
                   data-tooltip="Duracao maxima de cada corte viral (ideal entre 30s e 55s para Shorts/Reels)." />
               </div>
+              <div>
+                <label class="field-label">TikTok Monetizavel Min (segundos)</label>
+                <input id="cfg-tk-long-min" type="number" min="61" max="85" value="61" class="input"
+                  data-tooltip="Duracao minima da versao TikTok Monetizavel (padrao: 61s)." />
+              </div>
+              <div>
+                <label class="field-label">TikTok Monetizavel Max (segundos)</label>
+                <input id="cfg-tk-long-max" type="number" min="66" max="120" value="90" class="input"
+                  data-tooltip="Duracao maxima da versao TikTok Monetizavel (padrao: 90s)." />
+              </div>
+              <div>
+                <label class="field-label">Gancho Real de Pico (1.5s a 2.0s)</label>
+                <input id="cfg-peak-hook-sec" type="number" step="0.1" min="1.5" max="2.0" value="1.8" class="input"
+                  data-tooltip="Duracao do trecho real do pico inserido na abertura antes do micro-flash de 0,1s." />
+              </div>
+              <div>
+                <label class="field-label">Texto de Gancho no Topo (2.0s a 2.5s)</label>
+                <input id="cfg-hook-text-sec" type="number" step="0.1" min="2.0" max="2.5" value="2.3" class="input"
+                  data-tooltip="Tempo de exibicao do texto de gancho no topo do clipe." />
+              </div>
+              <div>
+                <label class="field-label">Intensidade do Zoom de Precisao (1.12x–1.15x)</label>
+                <input id="cfg-zoom-intensity" type="number" step="0.01" min="1.06" max="1.25" value="1.14" class="input"
+                  data-tooltip="Intensidade do zoom suave ease-in/ease-out (padrao recomendado: 1.14x, sem cortar HUD)." />
+              </div>
+              <div>
+                <label class="field-label">Pausa Automatica de CPU (%)</label>
+                <input id="cfg-cpu-thresh" type="number" min="65" max="95" value="80" class="input"
+                  data-tooltip="Se a CPU ultrapassar este limite por mais de 5s, o worker pausa automaticamente para proteger o Ryzen 5." />
+              </div>
             </div>
 
             <div class="toggle-row mt-4"
+              data-tooltip="Desligado (Padrao Ryzen 5): analisa audio completo e roda Optical Flow 320px@5fps apenas nas janelas candidatas. Ligado: escaneia 100% dos frames (mais lento).">
+              <div>
+                <div style="font-weight:600;color:#fff;">Modo Detalhado de Analise Visual (Usa Mais CPU)</div>
+                <div class="text-xs">Padrao desligado: modo leve em 2 etapas (320px a 5 fps) otimizado para Ryzen 5 2500U.</div>
+              </div>
+              <label class="switch">
+                <input id="cfg-detailed-mode" type="checkbox" />
+                <span class="slider"></span>
+              </label>
+            </div>
+
+            <div class="toggle-row mt-3"
               data-tooltip="Envia frames dos melhores momentos para o Qwen 3.5 9B Vision classificar mortes, sustos e gerar titulos virais.">
               <div>
                 <div style="font-weight:600;color:#fff;">Ativar Visao Computacional com Qwen 3.5 9B</div>
@@ -1012,6 +1682,110 @@
           </button>
         </div>
       </div>
+    </div>
+  </div>
+
+  <!-- P1: Gaveta de Problemas (Slide-over) -->
+  <div id="problems-drawer-backdrop" class="problems-drawer-backdrop" role="dialog" aria-modal="true" aria-label="Gaveta de Problemas">
+    <div class="problems-drawer">
+      <div class="problems-drawer-head">
+        <div class="flex items-center gap-2">
+          <span class="badge badge-red">PROBLEMAS</span>
+          <strong style="font-size:14.5px;">Central de Diagnostico Humano</strong>
+        </div>
+        <div class="flex gap-2">
+          <button id="problems-drawer-logs" class="btn btn-sm btn-cyan"><span>Abrir logs</span></button>
+          <button id="problems-drawer-clear" class="btn btn-sm"><span>Limpar</span></button>
+          <button id="problems-drawer-close" class="btn btn-sm"><span>Fechar</span></button>
+        </div>
+      </div>
+      <div id="problems-drawer-body" class="problems-drawer-body"></div>
+    </div>
+  </div>
+
+  <!-- P1: Painel Saude do Sistema Modal -->
+  <div id="health-modal-backdrop" class="wizard-backdrop" role="dialog" aria-modal="true" aria-label="Saude do Sistema">
+    <div class="wizard-modal">
+      <div class="wizard-head">
+        <div class="flex items-center gap-2">
+          <span class="badge badge-green">SAUDE DO SISTEMA</span>
+          <strong style="font-size:15px;">Hardware, IA &amp; Seguranca Local</strong>
+        </div>
+        <button id="btn-health-close" class="btn btn-sm"><span>Fechar</span></button>
+      </div>
+      <div class="wizard-body">
+        <div id="health-details-grid" class="health-grid"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- P1: Modal "Ver mais 5 opcoes" de Copy & Hashtags -->
+  <div id="copy-options-modal-backdrop" class="wizard-backdrop" role="dialog" aria-modal="true" aria-label="Mais 5 Opcoes de Copy">
+    <div class="wizard-modal" style="max-width:720px;">
+      <div class="wizard-head">
+        <div class="flex items-center gap-2">
+          <span class="badge badge-purple">MOTOR DE COPY BR</span>
+          <strong style="font-size:15px;">5 Novas Opcoes Sem Repeticao (Jaccard &lt; 0.35)</strong>
+        </div>
+        <div class="flex gap-2">
+          <button id="btn-copy-more-reroll" class="btn btn-sm btn-cyan"><span>Gerar +5 Opcoes</span></button>
+          <button id="btn-copy-more-close" class="btn btn-sm"><span>Fechar</span></button>
+        </div>
+      </div>
+      <div id="copy-options-list" class="wizard-body" style="max-height:72vh;overflow-y:auto;"></div>
+    </div>
+  </div>
+
+  <!-- P1: Guia "Pode / Nao Pode" Modal -->
+  <div id="guide-modal-backdrop" class="wizard-backdrop" role="dialog" aria-modal="true" aria-label="Guia Rapido Pode e Nao Pode">
+    <div class="wizard-modal" style="max-width:680px;">
+      <div class="wizard-head">
+        <div class="flex items-center gap-2">
+          <span class="badge badge-cyan">GUIA RAPIDO</span>
+          <strong style="font-size:15px;">Guia &quot;Pode / Nao Pode&quot; — Cortes Virais PS4/PS5</strong>
+        </div>
+        <button id="btn-guide-close" class="btn btn-sm"><span>Fechar</span></button>
+      </div>
+      <div class="wizard-body">
+        <div class="grid-2">
+          <div class="card" style="border-color:rgba(16,185,129,0.45);">
+            <strong style="color:#10B981;font-size:14px;">✓ PODE (Recomendado)</strong>
+            <ul class="text-xs" style="padding-left:16px;margin:8px 0 0;line-height:1.6;">
+              <li>Usar o <strong>Modo Hibrido IA</strong> (20–32s TikTok/Reels e 36–55s Shorts) ou <strong>TikTok 61–90s</strong> para monetizacao.</li>
+              <li>Preencher a <strong>Ficha do Jogo</strong> para titulos com nomes reais de personagens, armas e girias BR.</li>
+              <li>Manter o titulo dentro da <strong>Safe Zone verde</strong> (Y: 150–400) na previa 9:16.</li>
+              <li>Testar 1 upload privado no YouTube antes de ligar o lote diario.</li>
+            </ul>
+          </div>
+          <div class="card" style="border-color:rgba(239,68,68,0.45);">
+            <strong style="color:#EF4444;font-size:14px;">✕ NAO PODE (Evite)</strong>
+            <ul class="text-xs" style="padding-left:16px;margin:8px 0 0;line-height:1.6;">
+              <li>Colocar texto na base (Y &gt; 1460) ou direita (botoes do TikTok/Shorts cobrem o texto).</li>
+              <li>Rodar jogos pesados enquanto renderiza no Ryzen 5 (o protetor de CPU pausa em &gt;80%).</li>
+              <li>Repetir titulos e blocos identicos de hashtags (o motor bloqueia similaridade &gt; 0.35).</li>
+              <li>Desconectar o pendrive do PS4 durante a analise ou renderizacao ativa.</li>
+            </ul>
+          </div>
+        </div>
+        <div class="flex justify-between items-center mt-2">
+          <span class="text-xs">Quer rever os 3 passos principais da interface?</span>
+          <button id="btn-replay-tour" class="btn btn-sm btn-primary"><span>Iniciar Tour de 3 Baloes</span></button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- P1: Tour Rapido de 3 Baloes (Primeira Abertura) -->
+  <div id="tour-balloon" class="tour-balloon hidden" role="dialog" aria-label="Tour Rapido">
+    <div class="flex items-center justify-between mb-2">
+      <span id="tour-step-badge" class="badge badge-purple">Passo 1 de 3</span>
+      <button id="tour-skip-btn" class="btn btn-sm"><span>Pular</span></button>
+    </div>
+    <div id="tour-title" style="font-weight:700;font-size:14px;margin-bottom:4px;"></div>
+    <div id="tour-desc" class="text-xs" style="margin-bottom:12px;"></div>
+    <div class="flex justify-between items-center">
+      <button id="tour-prev-btn" class="btn btn-sm"><span>Anterior</span></button>
+      <button id="tour-next-btn" class="btn btn-sm btn-primary"><span>Proximo</span></button>
     </div>
   </div>
 

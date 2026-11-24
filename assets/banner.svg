@@ -1,0 +1,243 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 360" width="1280" height="360">
+  <defs>
+    <!-- Gradientes profundos cyber-dark -->
+    <linearGradient id="bgGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#0a0f1a"/>
+      <stop offset="35%" style="stop-color:#111827"/>
+      <stop offset="70%" style="stop-color:#0f172a"/>
+      <stop offset="100%" style="stop-color:#050a14"/>
+    </linearGradient>
+
+    <linearGradient id="neonCyan" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" style="stop-color:#00f5ff"/>
+      <stop offset="50%" style="stop-color:#00d4ff"/>
+      <stop offset="100%" style="stop-color:#06b6d4"/>
+    </linearGradient>
+
+    <linearGradient id="neonPurple" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" style="stop-color:#c084fc"/>
+      <stop offset="50%" style="stop-color:#a855f7"/>
+      <stop offset="100%" style="stop-color:#9333ea"/>
+    </linearGradient>
+
+    <linearGradient id="neonPink" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" style="stop-color:#f472b6"/>
+      <stop offset="50%" style="stop-color:#ec4899"/>
+      <stop offset="100%" style="stop-color:#db2777"/>
+    </linearGradient>
+
+    <linearGradient id="textGradient" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" style="stop-color:#ffffff"/>
+      <stop offset="30%" style="stop-color:#e0e7ff"/>
+      <stop offset="60%" style="stop-color:#c7d2fe"/>
+      <stop offset="100%" style="stop-color:#a5b4fc"/>
+    </linearGradient>
+
+    <linearGradient id="accentGradient" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" style="stop-color:#22d3ee"/>
+      <stop offset="100%" style="stop-color:#a855f7"/>
+    </accentGradient>
+
+    <!-- Glow filters -->
+    <filter id="glowStrong" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur stdDeviation="8" result="blur"/>
+      <feMerge>
+        <feMergeNode in="blur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+
+    <filter id="glowSoft" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur stdDeviation="4" result="blur"/>
+      <feMerge>
+        <feMergeNode in="blur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+
+    <filter id="innerGlow" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur stdDeviation="2" result="blur"/>
+      <feComposite operator="over" in="SourceGraphic" in2="blur"/>
+    </filter>
+
+    <filter id="dropShadow3D" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="4" dy="8" stdDeviation="6" flood-color="#000000" flood-opacity="0.6"/>
+    </filter>
+
+    <filter id="textGlow" x="-30%" y="-30%" width="160%" height="160%">
+      <feGaussianBlur stdDeviation="3" result="blur"/>
+      <feFlood flood-color="#00f5ff" flood-opacity="0.8" result="glowColor"/>
+      <feComposite in="glowColor" in2="blur" operator="in" result="glow"/>
+      <feMerge>
+        <feMergeNode in="glow"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+
+    <!-- Pattern grid isométrico -->
+    <pattern id="isoGrid" width="40" height="40" patternUnits="userSpaceOnUse">
+      <path d="M20,0 L40,20 L20,40 L0,20 Z" fill="none" stroke="url(#neonCyan)" stroke-width="0.3" opacity="0.15"/>
+    </pattern>
+
+    <!-- Clipping para o texto -->
+    <clipPath id="textClip">
+      <rect x="0" y="0" width="1280" height="360"/>
+    </clipPath>
+  </defs>
+
+  <!-- Background base -->
+  <rect width="1280" height="360" fill="url(#bgGradient)"/>
+
+  <!-- Grid isométrico animado -->
+  <g opacity="0.4">
+    <rect width="1280" height="360" fill="url(#isoGrid)"/>
+    <rect width="1280" height="360" fill="url(#isoGrid)" transform="translate(20,20)" opacity="0.5"/>
+  </g>
+
+  <!-- Elementos 3D flutuantes - Cubos isométricos -->
+  <g filter="url(#dropShadow3D)">
+    <!-- Cubo 1 - Esquerda (Video/Corte) -->
+    <g transform="translate(80, 180)">
+      <polygon points="0,20 20,0 40,20 20,40" fill="url(#neonCyan)" opacity="0.15" stroke="url(#neonCyan)" stroke-width="1.5"/>
+      <polygon points="20,0 40,20 20,40 0,20" fill="url(#neonCyan)" opacity="0.25" stroke="url(#neonCyan)" stroke-width="1"/>
+      <polygon points="0,20 20,40 0,60 -20,40" fill="url(#neonCyan)" opacity="0.2" stroke="url(#neonCyan)" stroke-width="1"/>
+      <!-- Ícone play no cubo -->
+      <polygon points="28,16 42,24 28,32" fill="url(#neonCyan)" opacity="0.9"/>
+    </g>
+
+    <!-- Cubo 2 - Centro (IA/Brain) -->
+    <g transform="translate(600, 140)" filter="url(#glowStrong)">
+      <polygon points="0,25 25,0 50,25 25,50" fill="url(#neonPurple)" opacity="0.2" stroke="url(#neonPurple)" stroke-width="2"/>
+      <polygon points="25,0 50,25 25,50 0,25" fill="url(#neonPurple)" opacity="0.35" stroke="url(#neonPurple)" stroke-width="1.5"/>
+      <polygon points="0,25 25,50 0,75 -25,50" fill="url(#neonPurple)" opacity="0.25" stroke="url(#neonPurple)" stroke-width="1.5"/>
+      <!-- Ícone cérebro/IA -->
+      <ellipse cx="25" cy="25" rx="18" ry="14" fill="none" stroke="url(#neonPurple)" stroke-width="1.5" opacity="0.8"/>
+      <path d="M15,25 Q25,15 35,25 Q25,35 15,25" fill="url(#neonPurple)" opacity="0.4"/>
+      <circle cx="25" cy="25" r="6" fill="url(#neonPurple)" opacity="0.6"/>
+    </g>
+
+    <!-- Cubo 3 - Direita (Upload/YouTube) -->
+    <g transform="translate(1100, 180)">
+      <polygon points="0,20 20,0 40,20 20,40" fill="url(#neonPink)" opacity="0.15" stroke="url(#neonPink)" stroke-width="1.5"/>
+      <polygon points="20,0 40,20 20,40 0,20" fill="url(#neonPink)" opacity="0.25" stroke="url(#neonPink)" stroke-width="1"/>
+      <polygon points="0,20 20,40 0,60 -20,40" fill="url(#neonPink)" opacity="0.2" stroke="url(#neonPink)" stroke-width="1"/>
+      <!-- Ícone upload -->
+      <path d="M30,10 L20,20 L20,35 L15,35 L15,20 L5,20 Z" fill="url(#neonPink)" opacity="0.9"/>
+    </g>
+  </g>
+
+  <!-- Partículas flutuantes -->
+  <g opacity="0.6">
+    <circle cx="150" cy="60" r="2" fill="url(#neonCyan)">
+      <animate attributeName="cy" values="60;40;60" dur="3s" repeatCount="indefinite"/>
+      <animate attributeName="opacity" values="0.3;1;0.3" dur="3s" repeatCount="indefinite"/>
+    </circle>
+    <circle cx="300" cy="80" r="1.5" fill="url(#neonPurple)">
+      <animate attributeName="cy" values="80;55;80" dur="4s" repeatCount="indefinite"/>
+      <animate attributeName="opacity" values="0.2;0.8;0.2" dur="4s" repeatCount="indefinite"/>
+    </circle>
+    <circle cx="950" cy="50" r="2" fill="url(#neonPink)">
+      <animate attributeName="cy" values="50;30;50" dur="3.5s" repeatCount="indefinite"/>
+      <animate attributeName="opacity" values="0.3;1;0.3" dur="3.5s" repeatCount="indefinite"/>
+    </circle>
+    <circle cx="1150" cy="100" r="1" fill="url(#neonCyan)">
+      <animate attributeName="cy" values="100;80;100" dur="2.5s" repeatCount="indefinite"/>
+      <animate attributeName="opacity" values="0.2;0.7;0.2" dur="2.5s" repeatCount="indefinite"/>
+    </circle>
+    <circle cx="450" cy="280" r="1.5" fill="url(#neonPurple)">
+      <animate attributeName="cy" values="280;260;280" dur="4.5s" repeatCount="indefinite"/>
+      <animate attributeName="opacity" values="0.2;0.9;0.2" dur="4.5s" repeatCount="indefinite"/>
+    </circle>
+    <circle cx="800" cy="300" r="2" fill="url(#neonPink)">
+      <animate attributeName="cy" values="300;275;300" dur="3s" repeatCount="indefinite"/>
+      <animate attributeName="opacity" values="0.3;0.8;0.3" dur="3s" repeatCount="indefinite"/>
+    </circle>
+  </g>
+
+  <!-- Linhas de conexão isométricas -->
+  <g stroke="url(#accentGradient)" stroke-width="1" opacity="0.3" filter="url(#glowSoft)">
+    <path d="M140,200 Q370,100 600,165" fill="none" stroke-dasharray="8,4">
+      <animate attributeName="stroke-dashoffset" values="0;20" dur="2s" repeatCount="indefinite"/>
+    </path>
+    <path d="M650,165 Q875,220 1120,200" fill="none" stroke-dasharray="8,4">
+      <animate attributeName="stroke-dashoffset" values="0;20" dur="2s" repeatCount="indefinite"/>
+    </path>
+  </g>
+
+  <!-- Texto Principal - CLIPRUSH -->
+  <g transform="translate(200, 110)" filter="url(#textGlow)">
+    <text x="0" y="0" font-family="'Segoe UI', 'SF Pro Display', 'Roboto', sans-serif"
+          font-weight="900" font-size="72" letter-spacing="-2" fill="url(#textGradient)"
+          clip-path="url(#textClip)">
+      CLIPRUSH
+    </text>
+  </g>
+
+  <!-- Subtítulo STUDIO PRO -->
+  <g transform="translate(200, 195)" filter="url(#glowSoft)">
+    <text x="0" y="0" font-family="'Segoe UI', 'SF Pro Display', 'Roboto', sans-serif"
+          font-weight="600" font-size="24" letter-spacing="4" fill="url(#accentGradient)"
+          clip-path="url(#textClip)">
+      STUDIO PRO
+    </text>
+  </g>
+
+  <!-- Tagline -->
+  <g transform="translate(200, 240)" opacity="0.85">
+    <text x="0" y="0" font-family="'Segoe UI', 'SF Pro Display', 'Roboto', sans-serif"
+          font-weight="400" font-size="16" letter-spacing="1" fill="#94a3b8"
+          clip-path="url(#textClip)">
+      Gameplays brutas → Cortes virais 9:16 + Gameplays 16:9  •  100% Local  •  Zero Nuvem  •  IA Multimodal
+    </text>
+  </g>
+
+  <!-- Badges inline no banner -->
+  <g transform="translate(200, 280)">
+    <!-- Badge Python -->
+    <g filter="url(#glowSoft)">
+      <rect x="0" y="0" width="110" height="28" rx="14" fill="#1e293b" stroke="#00f5ff" stroke-width="1" opacity="0.9"/>
+      <text x="55" y="19" font-family="'JetBrains Mono', 'Fira Code', monospace"
+            font-weight="600" font-size="11" fill="#00f5ff" text-anchor="middle">Python 3.12+</text>
+    </g>
+    <!-- Badge FastAPI -->
+    <g transform="translate(120, 0)" filter="url(#glowSoft)">
+      <rect x="0" y="0" width="95" height="28" rx="14" fill="#1e293b" stroke="#00d4ff" stroke-width="1" opacity="0.9"/>
+      <text x="47.5" y="19" font-family="'JetBrains Mono', 'Fira Code', monospace"
+            font-weight="600" font-size="11" fill="#00d4ff" text-anchor="middle">FastAPI</text>
+    </g>
+    <!-- Badge Ollama -->
+    <g transform="translate(225, 0)" filter="url(#glowSoft)">
+      <rect x="0" y="0" width="100" height="28" rx="14" fill="#1e293b" stroke="#a855f7" stroke-width="1" opacity="0.9"/>
+      <text x="50" y="19" font-family="'JetBrains Mono', 'Fira Code', monospace"
+            font-weight="600" font-size="11" fill="#a855f7" text-anchor="middle">Ollama Qwen</text>
+    </g>
+    <!-- Badge FFmpeg -->
+    <g transform="translate(335, 0)" filter="url(#glowSoft)">
+      <rect x="0" y="0" width="90" height="28" rx="14" fill="#1e293b" stroke="#f472b6" stroke-width="1" opacity="0.9"/>
+      <text x="45" y="19" font-family="'JetBrains Mono', 'Fira Code', monospace"
+            font-weight="600" font-size="11" fill="#f472b6" text-anchor="middle">FFmpeg</text>
+    </g>
+    <!-- Badge Local Only -->
+    <g transform="translate(435, 0)" filter="url(#glowSoft)">
+      <rect x="0" y="0" width="125" height="28" rx="14" fill="url(#neonPurple)" opacity="0.2" stroke="url(#neonPurple)" stroke-width="1.5"/>
+      <text x="62.5" y="19" font-family="'JetBrains Mono', 'Fira Code', monospace"
+            font-weight="700" font-size="11" fill="url(#neonPurple)" text-anchor="middle">100% LOCAL</text>
+    </g>
+  </g>
+
+  <!-- Barra decorativa inferior -->
+  <g transform="translate(0, 340)">
+    <rect x="0" y="0" width="1280" height="20" fill="url(#accentGradient)" opacity="0.15"/>
+    <rect x="0" y="0" width="1280" height="2" fill="url(#accentGradient)" opacity="0.6"/>
+  </g>
+
+  <!-- Elementos decorativos laterais - Barras verticais -->
+  <g opacity="0.4">
+    <rect x="30" y="60" width="3" height="200" fill="url(#neonCyan)" rx="1.5">
+      <animate attributeName="height" values="200;150;200" dur="4s" repeatCount="indefinite"/>
+    </rect>
+    <rect x="1247" y="80" width="3" height="180" fill="url(#neonPink)" rx="1.5">
+      <animate attributeName="height" values="180;130;180" dur="3.5s" repeatCount="indefinite"/>
+    </rect>
+  </g>
+</svg>
